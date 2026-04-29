@@ -1,0 +1,41 @@
+services:
+  cpa-claude-code:
+    build: .
+    container_name: cpa-claude-code
+    volumes:
+      - .:/app
+      - ./claude:/home/node/.claude
+      - ./claude.json:/home/node/.claude.json
+      - /var/run/docker.sock:/var/run/docker.sock
+      - cpa-tmux:/tmp/cpa-tmux
+    environment:
+      COLORTERM: truecolor
+      FORCE_COLOR: "3"
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    group_add:
+      - "998"
+    stdin_open: true
+    tty: true
+  cpa-panel:
+    build: ./claude-panel
+    container_name: cpa-panel
+    working_dir: /srv
+    volumes:
+      - ./claude-panel:/srv:ro
+      - ./claude:/data/claude:ro
+      - cpa-tmux:/host-tmux:rw
+      - ./claude-panel/uploads:/uploads:rw
+    environment:
+      CLAUDE_DIR: /data/claude
+      PORT: "8080"
+      TMUX_SOCKET: /host-tmux/default
+      TMUX_TARGET: cpa-tmux
+      UPLOADS_DIR: /uploads
+      UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  cpa-tmux:
