@@ -9,10 +9,12 @@ const {
   readHistory,
 } = require("./sessions");
 const { sseClients, sseBroadcast } = require("./sse");
-const { sendText, capturePane, sendInterrupt } = require("./tmux");
+const { sendText, capturePane, sendInterrupt, invalidatePaneCache, getClaudeStartedAtMs } = require("./tmux");
 const queueMod = require("./queue");
 queueMod.setBroadcaster(sseBroadcast);
 queueMod.startPeriodic();
+const btwMod = require("./btw");
+btwMod.setBroadcaster(sseBroadcast);
 const { proxyHttp } = require("./proxy");
 const { fetchUsage } = require("./usage");
 const INDEX_HTML = require("./ui");
@@ -68,31 +70,42 @@ function handle(req, res) {
       const limit = Math.min(Number(parsed.query.limit) || 50, 500);
       const sessions = listSessions();
       if (!sessions.length) return json(res, 200, { empty: true });
-      const newest = sessions[0];
-      const events = parseSession(newest.id, newest.project);
-      for (let i = 0; i < events.length; i++) events[i]._i = i;
-      let slice;
-      if (after != null) {
-        slice = events.filter(e => e._i > after);
-      } else if (before != null) {
-        slice = events.filter(e => e._i < before).slice(-limit);
-      } else {
-        slice = events.slice(-limit);
-      }
-      const meta = (before == null && after == null) ? summarizeSession(newest.id, newest.project) : null;
-      let status = detectStatus(newest.id, newest.project);
-      // After Esc, JSONL won't get an assistant turn, so detectStatus would
-      // keep saying "thinking" until the cap. Honor the interrupt grace so
-      // a refreshed panel shows idle right away.
-      if (status === "thinking" && queueMod.wasRecentlyInterrupted()) status = "idle";
-      return json(res, 200, {
-        project: newest.project,
-        sessionId: newest.id,
-        totalEvents: events.length,
-        events: slice,
-        meta,
-        status,
+      const socket = process.env.TMUX_SOCKET || "/host-tmux/default";
+      const target = process.env.TMUX_TARGET || "";
+      const filterStaleP = (before == null && after == null && target)
+        ? getClaudeStartedAtMs(socket, target).catch(() => null)
+        : Promise.resolve(null);
+      filterStaleP.then(startedAt => {
+        const newest = sessions[0];
+        if (startedAt != null && before == null && after == null && newest.mtime < startedAt) {
+          return json(res, 200, { empty: true, reason: "fresh-claude" });
+        }
+        const events = parseSession(newest.id, newest.project);
+        for (let i = 0; i < events.length; i++) events[i]._i = i;
+        let slice;
+        if (after != null) {
+          slice = events.filter(e => e._i > after);
+        } else if (before != null) {
+          slice = events.filter(e => e._i < before).slice(-limit);
+        } else {
+          slice = events.slice(-limit);
+        }
+        const meta = (before == null && after == null) ? summarizeSession(newest.id, newest.project) : null;
+        let status = detectStatus(newest.id, newest.project);
+        // After Esc, JSONL won't get an assistant turn, so detectStatus would
+        // keep saying "thinking" until the cap. Honor the interrupt grace so
+        // a refreshed panel shows idle right away.
+        if (status === "thinking" && queueMod.wasRecentlyInterrupted()) status = "idle";
+        json(res, 200, {
+          project: newest.project,
+          sessionId: newest.id,
+          totalEvents: events.length,
+          events: slice,
+          meta,
+          status,
+        });
       });
+      return;
     }
     if (pathname === "/api/stream") {
       res.writeHead(200, {
@@ -142,6 +155,46 @@ function handle(req, res) {
         const r = queueMod.enqueue({ text, files: saved, pendingId });
         return json(res, 200, { ok: true, queued: true, id: r.id, position: r.position, files: saved.length });
       });
+      return;
+    }
+    if (pathname === "/api/btw" && req.method === "POST") {
+      const chunks = [];
+      let total = 0;
+      let aborted = false;
+      req.on("data", c => {
+        total += c.length;
+        if (total > 256 * 1024) { aborted = true; req.destroy(); return; }
+        chunks.push(c);
+      });
+      req.on("end", () => {
+        if (aborted) return;
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+        catch { return json(res, 400, { error: "bad json" }); }
+        const question = String(body.question || "").replace(/\r/g, "").replace(/\n/g, " ").trim();
+        if (!question) return json(res, 400, { error: "empty" });
+        const socket = process.env.TMUX_SOCKET || "/host-tmux/default";
+        const target = process.env.TMUX_TARGET || "";
+        if (!target) return json(res, 500, { error: "TMUX_TARGET not set" });
+        // /btw is a TUI-side overlay command — it does NOT write to JSONL.
+        // We deliver keystrokes via tmux and tail the pane buffer to surface
+        // the answer back into the panel feed.
+        sendText(socket, target, "/btw " + question)
+          .then(() => {
+            invalidatePaneCache();
+            const id = btwMod.start({ socket, target, question });
+            json(res, 200, { ok: true, id });
+          })
+          .catch(e => json(res, 500, { error: e.message }));
+      });
+      return;
+    }
+    if (pathname === "/api/btw/close" && req.method === "POST") {
+      const id = String(parsed.query.id || "");
+      if (!id) return json(res, 400, { error: "missing id" });
+      btwMod.stop(id, "user-close")
+        .then(ok => json(res, ok ? 200 : 404, { ok, error: ok ? null : "not found" }))
+        .catch(e => json(res, 500, { error: e.message }));
       return;
     }
     if (pathname === "/api/interrupt" && req.method === "POST") {

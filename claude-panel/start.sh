@@ -4,9 +4,20 @@ set -eu
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 
-: "${TMUX_SOCKET:=/host-tmux/default}"
+: "${TMUX_SOCKET:=/tmp/cpa-tmux/default}"
 : "${TMUX_TARGET:=cpa-tmux}"
 : "${TTYD_PORT:=7681}"
+: "${TMUX_CONF:=/etc/cpa-tmux/tmux.conf}"
+: "${CLAUDE_ARGS:=--dangerously-skip-permissions}"
+
+mkdir -p "$(dirname "$TMUX_SOCKET")"
+
+if tmux -S "$TMUX_SOCKET" has-session -t "$TMUX_TARGET" 2>/dev/null; then
+  tmux -S "$TMUX_SOCKET" source-file "$TMUX_CONF" >/dev/null 2>&1 || true
+else
+  tmux -u -f "$TMUX_CONF" -S "$TMUX_SOCKET" \
+    new-session -d -s "$TMUX_TARGET" "claude $CLAUDE_ARGS"
+fi
 
 ttyd \
   -p "$TTYD_PORT" \

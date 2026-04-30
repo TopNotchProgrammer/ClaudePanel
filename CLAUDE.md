@@ -112,6 +112,8 @@ claude-panel/
 - `POST /api/queue/cancel?id=` — usuwa z kolejki (200 jak ok, 409 jak już `sending`).
 - `POST /api/queue/clear` — drop wszystkich oprócz `sending`.
 - `POST /api/interrupt` — `tmux send-keys Escape` → przerywa bieżący turn Claude'a.
+- `POST /api/btw` — body `{ question }`. Wysyła `/btw <question>` do TUI **omijając kolejkę** + uruchamia watcher `btw.js` który tail'uje `capture-pane` i broadcastuje do SSE. Zwraca `{ok, id}`. Bez załączników, bez parowania z JSONL (Claude Code'owy `/btw` to TUI overlay — nie zapisuje do JSONL, jedyne źródło to bufor pane'a). SSE: `{type:"btw-start", id, question}`, `{type:"btw-tick", id, text}` (~co 800 ms), `{type:"btw-end", id, reason, closed}`.
+- `POST /api/btw/close?id=` — kończy watcher i wysyła `Escape` do tmuxa, żeby zamknąć overlay `/btw` i odblokować normalną konwersację. 200 jak ok, 404 jak nie ma takiego id.
 - `GET /healthz` — `{ ok: true }`.
 
 ### Gotchas

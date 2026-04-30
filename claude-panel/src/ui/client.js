@@ -180,9 +180,36 @@ function updateQueueIndicator(){
 }
 
 function enqueueMessage(){
+  if(document.body.classList.contains('btw-active')) return;
   const text = sendText.value.trim();
   if(!text && !pendingAttachments.length) return;
+  // /btw <question> bypasses the queue and goes through the side-question flow.
+  // No attachments — Claude Code's /btw doesn't accept them anyway.
+  // Empty /btw (no question) is dropped silently — never sent as a regular message.
+  const btwHead = text.match(/^\\/btw(?:\\s+([\\s\\S]*))?$/);
+  if(btwHead){
+    const q = (btwHead[1]||'').replace(/\\r/g,'').replace(/\\n/g,' ').trim();
+    if(!q) return;
+    if(!pendingAttachments.length){
+      sendText.value = '';
+      sendText.style.height = '';
+      sendText.style.overflowY = '';
+      sendBtw(q);
+      return;
+    }
+  }
   const files = pendingAttachments.map(a => ({ name: a.name, type: a.type, data: a.dataUrl }));
+  sendText.value = '';
+  sendText.style.height = '';
+  sendText.style.overflowY = '';
+  pendingAttachments = [];
+  renderAttachments();
+  submitPayload(text, files);
+}
+
+// Push a payload onto the local + server queue and add an optimistic pending
+// event to the feed. _origText/_origFiles are kept so retry can re-submit.
+function submitPayload(text, files){
   const pendingId = Math.random().toString(36).slice(2);
   messageQueue.push({ text, files, pendingId, _pendingId: pendingId });
   if(state.feed && state.view==='latest'){
@@ -197,17 +224,32 @@ function enqueueMessage(){
       _pendingAt: now,
       _pendingHasFiles: files.length > 0,
       _pendingHasText: !!text,
+      _origText: text,
+      _origFiles: files,
     });
     state.lastRenderedMaxIndex = null;
     renderLatest({mode:'newer'});
   }
-  sendText.value = '';
-  sendText.style.height = '';
-  sendText.style.overflowY = '';
-  pendingAttachments = [];
-  renderAttachments();
   updateQueueIndicator();
   if(!isProcessing) processQueue();
+}
+
+function retryPending(pid){
+  if(!state.feed) return;
+  const i = state.feed.events.findIndex(e => e._pending && e._pendingId === pid);
+  if(i < 0) return;
+  const old = state.feed.events[i];
+  const text = old._origText || '';
+  const files = old._origFiles || [];
+  if(!text && !files.length) return;
+  // Best-effort cancel of the server-side queue entry. May 409 if already sending —
+  // accept the duplicate risk in that case (user explicitly asked to retry).
+  if(old._queueId){
+    fetch('/api/queue/cancel?id='+encodeURIComponent(old._queueId), {method:'POST'}).catch(()=>{});
+  }
+  state.feed.events.splice(i, 1);
+  state.lastRenderedMaxIndex = null;
+  submitPayload(text, files);
 }
 
 function findPendingByPid(pid){
@@ -267,6 +309,79 @@ if(interruptBtn) interruptBtn.addEventListener('click', ()=>{
     })
     .catch(e=>showToast('błąd: '+e.message, 'err'));
 });
+
+async function sendBtw(question){
+  const localPid = Math.random().toString(36).slice(2);
+  if(state.feed && state.view==='latest'){
+    state.feed.events.push({
+      kind: 'btw',
+      ts: new Date().toISOString(),
+      _btwLocalId: localPid,
+      _btwQuestion: question,
+      _btwText: '',
+      _btwLive: true,
+      _btwClosed: false,
+    });
+    state.lastRenderedMaxIndex = null;
+    renderLatest({mode:'newer'});
+  }
+  try{
+    const r = await fetch('/api/btw', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question})});
+    const d = await r.json().catch(()=>({}));
+    if(r.ok && d.ok && d.id && state.feed){
+      const ev = state.feed.events.find(e => e._btwLocalId === localPid);
+      if(ev){ ev._btwId = d.id; }
+      showToast('/btw wysłane', 'ok');
+    } else {
+      const ev = state.feed && state.feed.events.find(e => e._btwLocalId === localPid);
+      if(ev){ ev._btwLive = false; ev._btwError = (d && d.error) || ('HTTP '+r.status); state.lastRenderedMaxIndex=null; if(state.view==='latest') renderLatest({mode:'newer'}); }
+      showToast('błąd /btw: '+((d && d.error) || r.status), 'err');
+    }
+  }catch(e){
+    const ev = state.feed && state.feed.events.find(e => e._btwLocalId === localPid);
+    if(ev){ ev._btwLive = false; ev._btwError = e.message; state.lastRenderedMaxIndex=null; if(state.view==='latest') renderLatest({mode:'newer'}); }
+    showToast('błąd /btw: '+e.message, 'err');
+  }
+}
+function handleBtwTick(d){
+  if(!state.feed) return;
+  const ev = state.feed.events.find(e => e._btwId === d.id);
+  if(!ev) return;
+  ev._btwText = d.text || '';
+  state.lastRenderedMaxIndex = null;
+  if(state.view==='latest') renderLatest({mode:'newer'});
+}
+function handleBtwEnd(d){
+  if(!state.feed) return;
+  const events = state.feed.events;
+  const idx = events.findIndex(e => e._btwId === d.id);
+  if(idx < 0) return;
+  const ev = events[idx];
+  ev._btwLive = false;
+  ev._btwClosed = true;
+  // Move closed btw into chronological position so it sits inline with the
+  // surrounding turn instead of forever pinned at the bottom.
+  events.splice(idx, 1);
+  const ts = Date.parse(ev.ts) || 0;
+  let insertAt = events.length;
+  for(let i = 0; i < events.length; i++){
+    const otherTs = Date.parse(events[i].ts);
+    if(!isNaN(otherTs) && otherTs > ts){ insertAt = i; break; }
+  }
+  events.splice(insertAt, 0, ev);
+  state.lastRenderedMaxIndex = null;
+  if(state.view==='latest') renderLatest({mode:'newer'});
+}
+document.addEventListener('click', (e)=>{
+  const btn = e.target && e.target.closest && e.target.closest('.btw-close-btn');
+  if(!btn) return;
+  e.preventDefault();
+  const id = btn.dataset.btwId;
+  if(!id) return;
+  fetch('/api/btw/close?id='+encodeURIComponent(id), {method:'POST'})
+    .then(r=>r.json().catch(()=>({})))
+    .then(d=>{ if(!d || !d.ok) showToast('błąd zamknięcia: '+((d && d.error) || ''), 'err'); });
+});
 function dismissPendingLocal(pid){
   if(!state.feed) return;
   const i = state.feed.events.findIndex(e => e._pending && e._pendingId === pid);
@@ -293,6 +408,13 @@ document.addEventListener('click', (e)=>{
   fetch('/api/queue/cancel?id='+encodeURIComponent(id), {method:'POST'})
     .then(r=>r.json().catch(()=>({})))
     .then(d=>{ if(!d.ok) showToast('za późno — w drodze do tmux', 'err'); });
+});
+document.addEventListener('click', (e)=>{
+  const btn = e.target && e.target.closest && e.target.closest('.pending-retry');
+  if(!btn) return;
+  e.preventDefault();
+  const pid = btn.dataset.retryPid;
+  if(pid) retryPending(pid);
 });
 
 async function processQueue(){
@@ -361,6 +483,7 @@ function stopLatestLoops(){
   if(state.scrollObs){ state.scrollObs.disconnect(); state.scrollObs=null; }
   if(state.sse){ try{ state.sse.close(); }catch{} state.sse=null; }
   stopPanePoll();
+  document.body.classList.remove('btw-active');
 }
 
 const PANE_POLL_KEY = 'cpa-panel-pane-on';
@@ -510,7 +633,20 @@ function renderLatest(opts){
   qEl.value=state.query||'';
   const f=state.feed;
   setStatus(f ? f.status : 'idle');
-  if(!f){ main.innerHTML='<div class="empty">brak sesji</div>'; state.lastRenderedMaxIndex=null; return; }
+  const wasBtwActive = document.body.classList.contains('btw-active');
+  const isBtwActive = !!(f && f.events.some(e => e.kind==='btw' && e._btwLive));
+  document.body.classList.toggle('btw-active', isBtwActive);
+  const btwJustClosed = wasBtwActive && !isBtwActive;
+  if(!f){
+    const msg = state.feedEmptyReason==='fresh-claude'
+      ? 'świeża sesja claude — napisz pierwszą wiadomość'
+      : 'brak sesji';
+    main.innerHTML='<div class="empty">'+msg+'</div>';
+    infoPanel.innerHTML='';
+    counterEl.textContent='0/0';
+    state.lastRenderedMaxIndex=null;
+    return;
+  }
   const q=(state.query||'').toLowerCase();
   let evs=f.events;
   if(q) evs=evs.filter(e=>searchMatch(e,q));
@@ -534,7 +670,7 @@ function renderLatest(opts){
   // Incremental append for 'newer' mode (preserves selection/scroll/inputs).
   // Skip when pending optimistic events are present — their position and
   // stuck-after-30s flag need a full re-render to stay correct.
-  const hasPendingNow = evs.some(e => e._pending);
+  const hasPendingNow = evs.some(e => e._pending || e.kind==='btw');
   if(mode==='newer' && !q && state.lastRenderedMaxIndex!=null && main.querySelector('.event') && !hasPendingNow){
     const fresh = evs.filter(e => e._i > state.lastRenderedMaxIndex);
     if(fresh.length){
@@ -556,6 +692,7 @@ function renderLatest(opts){
   } else if(mode==='older'){
     if(!wasNearTop) main.scrollTop=prevY+(newH-prevH);
   }
+  if(btwJustClosed) main.scrollTop=main.scrollHeight;
   attachScrollObserver();
 }
 
@@ -789,20 +926,41 @@ function summariseInput(name, input){
 
 function renderEvent(e){
   const time=e.ts?fmtDate(Date.parse(e.ts)):'';
+  if(e.kind === 'btw'){
+    const q = esc(e._btwQuestion || '');
+    const text = e._btwText || (e._btwError ? ('błąd: '+e._btwError) : (e._btwLive ? 'czekam na claude…' : ''));
+    let cls = 'event btw';
+    if(e._btwLive) cls += ' live';
+    if(e._btwClosed) cls += ' closed';
+    if(e._btwError) cls += ' err';
+    const closeBtn = (e._btwId && e._btwLive)
+      ? '<button class="pending-cancel btw-close-btn" data-btw-id="'+esc(e._btwId)+'" title="zamknij /btw (Escape)" aria-label="zamknij">×</button>'
+      : '';
+    const tsHtml = time ? '<span style="margin-left:auto">'+time+'</span>' : '<span style="flex:1"></span>';
+    const head = '<div class="h"><span class="k">btw</span>'+tsHtml+closeBtn+'</div>';
+    const body = '<div class="btw-q">'+q+'</div>'
+      + (text ? '<pre class="btw-pane">'+esc(text)+'</pre>' : '');
+    return '<div class="'+cls+'">'+head+body+'</div>';
+  }
   const label=({user:'user',assistant:'claude',tool_use:'tool',tool_result:'result',system:'system',thinking:'thinking'}[e.kind])||e.kind;
   // X button on pending: server-cancel if cancellable, local-dismiss if errored/stuck.
+  // Retry button (↻) appears alongside × when stuck/errored and we have the original payload.
   let xBtn = '';
+  let retryBtn = '';
   if(e._pending){
     const errored = !!e._error;
     const stuck = !errored && (Date.now() - (e._pendingAt||0)) > 30000;
     const sentOrSending = e._serverState === 'sending' || e._serverState === 'sent';
     if(errored || stuck){
       xBtn = '<button class="pending-cancel" data-local-pid="'+esc(e._pendingId||'')+'" title="zamknij" aria-label="zamknij">×</button>';
+      if((e._origText && e._origText.length) || (e._origFiles && e._origFiles.length)){
+        retryBtn = '<button class="pending-retry" data-retry-pid="'+esc(e._pendingId||'')+'" title="spróbuj ponownie" aria-label="spróbuj ponownie">↻</button>';
+      }
     } else if(e._queueId && !sentOrSending){
       xBtn = '<button class="pending-cancel" data-cancel-id="'+esc(e._queueId)+'" title="anuluj" aria-label="anuluj">×</button>';
     }
   }
-  const cancelBtn = xBtn;
+  const cancelBtn = retryBtn + xBtn;
   const tsHtml = time ? '<span style="margin-left:auto">'+time+'</span>' : (cancelBtn ? '<span style="flex:1"></span>' : '');
   const head='<div class="h"><span class="k">'+label+'</span>'+(e.kind==='tool_use'?'<span class="toolname">'+esc(e.name)+'</span>':'')+tsHtml+cancelBtn+'</div>';
   let body='';
@@ -881,7 +1039,8 @@ async function loadCommands(){
 async function initLatest(){
   const r=await fetch('/api/latest?limit=50');
   const d=await r.json();
-  if(d.empty){ state.feed=null; return; }
+  if(d.empty){ state.feed=null; state.feedEmptyReason=d.reason||null; return; }
+  state.feedEmptyReason=null;
   const idx=d.events.map(e=>e._i);
   state.feed={
     sessionId:d.sessionId, project:d.project, totalEvents:d.totalEvents, meta:d.meta,
@@ -969,11 +1128,13 @@ async function pollLatest(){
       const reaped = reapPending(f, fresh);
       // Pending removal breaks the prefix-unchanged assumption of incremental render.
       if(reaped) state.lastRenderedMaxIndex=null;
-      // Insert fresh server events before any remaining pending (so pending stay at the bottom).
-      const pending = f.events.filter(e=>e._pending);
-      const nonPending = f.events.filter(e=>!e._pending);
-      f.events = nonPending.concat(fresh).concat(pending);
-      if(pending.length) state.lastRenderedMaxIndex=null; // pending mixed in: prefix may have shifted
+      // Insert fresh server events before any trailing local events (pending
+      // or live btw) so those stay at the bottom. Closed btw is left in
+      // "others" so it keeps its chronological slot.
+      const trailing = f.events.filter(e=>e._pending || (e.kind==='btw' && e._btwLive));
+      const others = f.events.filter(e=>!(e._pending || (e.kind==='btw' && e._btwLive)));
+      f.events = others.concat(fresh).concat(trailing);
+      if(trailing.length) state.lastRenderedMaxIndex=null; // trailing mixed in: prefix may have shifted
       if(f.events.length>MAX_FEED_EVENTS){
         f.events=f.events.slice(-MAX_FEED_EVENTS);
         state.lastRenderedMaxIndex=null;
@@ -1012,6 +1173,8 @@ function startLatestLoops(){
         if(d.type==='tick') pollLatest();
         if(d.type==='queue') handleQueueEvent(d);
         if(d.type==='interrupted') flipToIdle();
+        if(d.type==='btw-tick') handleBtwTick(d);
+        if(d.type==='btw-end') handleBtwEnd(d);
       }catch{}
     };
   }catch{}

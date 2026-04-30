@@ -1,0 +1,33 @@
+# Drop into a host project's repo root. Requires:
+#   ./           — the project files claude can browse (mounted to /app)
+#   ./claude/    — claude state + OAuth credentials (mounted to /home/node/.claude)
+#   ./claude.json — claude CLI settings
+#
+# After `docker compose up -d`, panel is at http://localhost:8080.
+# Run ./start.sh to also attach a terminal to the tmux session.
+
+services:
+  claude-panel:
+    image: ghcr.io/PLACEHOLDER_OWNER/PLACEHOLDER_REPO:latest
+    container_name: claude-panel
+    pull_policy: always
+    volumes:
+      - .:/app
+      - ./claude:/home/node/.claude
+      - ./claude.json:/home/node/.claude.json
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      CLAUDE_DIR: /home/node/.claude
+      PORT: "8080"
+      TMUX_SOCKET: /tmp/cpa-tmux/default
+      TMUX_TARGET: cpa-tmux
+      UPLOADS_DIR: /srv/uploads
+      UPLOADS_CLAUDE_PATH: /srv/uploads
+    ports:
+      - "127.0.0.1:8080:8080"
+    group_add:
+      # docker socket gid on the host. `getent group docker | cut -d: -f3` on host.
+      - "998"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
