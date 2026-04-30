@@ -1,0 +1,75 @@
+version: 2.1
+
+orbs:
+  docker: circleci/docker@3.0.1
+
+parameters:
+  manual_build:
+    type: boolean
+    default: false
+
+jobs:
+  build-and-push:
+    docker:
+      - image: cimg/base:current
+    resource_class: medium
+    steps:
+      - checkout
+      - setup_remote_docker
+      - docker/check:
+          docker_username: DOCKERHUB_USER
+          docker_password: DOCKERHUB_TOKEN
+      - run:
+          name: Resolve image name and tags
+          command: |
+            USER_LC=$(echo "$DOCKERHUB_USER" | tr '[:upper:]' '[:lower:]')
+            IMAGE="${USER_LC}/claude-panel"
+            TAG_ARGS="-t ${IMAGE}:${CIRCLE_SHA1:0:7}"
+            if [ -n "$CIRCLE_TAG" ]; then
+              SEMVER="${CIRCLE_TAG#v}"
+              MAJOR="${SEMVER%%.*}"
+              MAJOR_MINOR="${SEMVER%.*}"
+              TAG_ARGS="$TAG_ARGS -t ${IMAGE}:${CIRCLE_TAG} -t ${IMAGE}:${MAJOR_MINOR} -t ${IMAGE}:${MAJOR} -t ${IMAGE}:latest"
+            else
+              TAG_ARGS="$TAG_ARGS -t ${IMAGE}:latest"
+            fi
+            echo "export IMAGE='$IMAGE'" >> "$BASH_ENV"
+            echo "export TAG_ARGS=\"$TAG_ARGS\"" >> "$BASH_ENV"
+            echo "Resolved: $IMAGE"
+            echo "Tags: $TAG_ARGS"
+      - run:
+          name: Set up QEMU for multi-arch
+          command: docker run --privileged --rm tonistiigi/binfmt:latest --install all
+      - run:
+          name: Bootstrap buildx builder
+          command: |
+            docker buildx create --use --name multiarch
+            docker buildx inspect --bootstrap
+      - run:
+          name: Build and push (linux/amd64, linux/arm64)
+          no_output_timeout: 30m
+          command: |
+            eval docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              $TAG_ARGS \
+              --push \
+              ./claude-panel
+
+workflows:
+  release:
+    when:
+      not: << pipeline.parameters.manual_build >>
+    jobs:
+      - build-and-push:
+          context: dockerhub-publish
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+
+  manual:
+    when: << pipeline.parameters.manual_build >>
+    jobs:
+      - build-and-push:
+          context: dockerhub-publish

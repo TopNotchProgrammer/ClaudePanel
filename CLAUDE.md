@@ -1,64 +1,63 @@
 # CLAUDE.md
 
-Repo do budowy **claude-panel** — przeglądarkowego panelu do monitorowania i sterowania sesją Claude Code działającą w sąsiednim kontenerze. Panel ma być przenośny: po dopracowaniu tutaj będzie wpinany do innych projektów (jako `claude-panel/` + dwie usługi w ich `compose.yml`).
+Repo do budowy **claude-panel** — przeglądarkowego panelu do monitorowania i sterowania sesją Claude Code działającą w tym samym kontenerze. Cel: jeden samowystarczalny obraz Docker, który dropujesz do dowolnego projektu (jedna usługa w `compose.yml` + bind-mount kodu projektu).
 
-Kod panelu = `claude-panel/`. Wszystko poza tym katalogiem (`compose.yml`, `Dockerfile`, `start.sh`, `claude/`, `claude.json`) to **harness deweloperski** — uruchamia panel i sesję Claude Code lokalnie tak, jak będą działać u końcowego użytkownika.
+Kod panelu = `claude-panel/`. Wszystko poza tym katalogiem (`compose.yml`, `start.sh`, `claude/`, `claude.json`) to **harness deweloperski** — uruchamia ten sam obraz lokalnie tak, jak będą używać go końcowi konsumenci.
 
 ## Layout
 
 ```
 /app
   CLAUDE.md              ← ten plik
-  Dockerfile             ← obraz cpa-claude-code (node:22-slim + tmux + docker.io + claude-code CLI)
-  compose.yml            ← dwie usługi: cpa-claude-code (sesja) + cpa-panel (UI)
-  start.sh               ← `compose up -d` + uruchomienie tmuxa z `claude` i attach
-  claude/                ← bind-mount na ~/.claude wewnątrz cpa-claude-code (sesje JSONL, OAuth)
+  compose.yml            ← jedna usługa `claude-panel` (build: ./claude-panel)
+  start.sh               ← `compose up -d --build` + `docker exec -it … cpa-attach`
+  claude/                ← bind-mount na ~/.claude w kontenerze (sesje JSONL, OAuth, .credentials.json)
   claude.json            ← bind-mount na ~/.claude.json (ustawienia CLI)
-  claude-panel/          ← właściwy produkt — patrz §"Panel" niżej
+  claude-panel/          ← właściwy produkt — Dockerfile + kod panelu, patrz §"Panel" niżej
+  .circleci/config.yml   ← release pipeline → docker.io/<user>/claude-panel (multi-arch, na tagach v*)
+  examples/host-project/ ← przykład minimalnego compose.yml dla konsumenta obrazu
 ```
+
+Brak root Dockerfile — pełny obraz (panel + Claude Code CLI + tmux + ttyd + docker.io) buduje się z `claude-panel/Dockerfile`.
 
 ## Pętla deweloperska
 
 `./start.sh`:
 
-1. `docker compose up -d` — buduje/uruchamia oba kontenery.
-2. Czyści stary socket `/tmp/cpa-tmux/default` w `cpa-claude-code` i ustawia uprawnienia.
-3. Wewnątrz `cpa-claude-code` uruchamia tmuxa na shared sockecie i odpala `claude --dangerously-skip-permissions` w sesji `cpa-tmux` (jeśli sesja już istnieje — tylko reload `tmux.conf`).
-4. `docker exec -it … tmux attach` — przyklejasz się terminalem do tej samej sesji, którą widzi panel.
+1. `docker compose up -d --build` — buduje obraz z `claude-panel/` i odpala jedyną usługę `claude-panel`.
+2. `docker exec -it claude-panel cpa-attach` — wrapper na `tmux -S /tmp/cpa-tmux/default attach -t cpa-tmux`. Przyklejasz się do tej samej sesji tmuxa, którą widzi panel webowy.
 
-Panel siedzi na `http://localhost:8080`. Edycja plików w `claude-panel/src/**` → `node --watch` w kontenerze restartuje serwer (bez `docker restart`). Jeśli `fs.watch` nie złapie zmiany (znany problem bind-mountów na Linuksie) → `docker restart cpa-panel`.
+W środku kontenera `claude-panel/start.sh` (entrypoint) odpala równolegle:
+- tmuxa z `claude --dangerously-skip-permissions` w sesji `cpa-tmux` na sockecie `/tmp/cpa-tmux/default` (jeśli już istnieje — tylko reload `tmux.conf`),
+- `ttyd -p 7681 -i 127.0.0.1 -W -b /terminal tmux attach -t cpa-tmux` w tle (terminal w przeglądarce),
+- `node --watch server.js` jako foreground (proces główny kontenera).
 
-`Dockerfile` w roocie buduje obraz **dla sesji Claude Code**, nie dla panelu. Panel ma własny `claude-panel/Dockerfile` (7 linii: `node:22-slim` + `tmux` + `ca-certificates`, start `node --watch server.js`).
+Panel siedzi na `http://localhost:8080`. Edycja plików w `claude-panel/src/**` → `node --watch` restartuje serwer w kontenerze (bind-mount `./claude-panel:/srv` jest RW). Jeśli `fs.watch` nie złapie zmiany → `docker restart claude-panel`.
 
-## Dwie usługi (`compose.yml`)
+## Jedna usługa (`compose.yml`)
 
-**`cpa-claude-code`** — kontener, w którym żyje sesja Claude Code:
-- `./` → `/app` (cały repo widoczny dla CLI; uploady z panelu lądują pod ścieżką, którą Claude widzi tu jako `/app/claude-panel/uploads/...`).
-- `./claude` → `/home/node/.claude` (sesje JSONL, OAuth tokeny — czytane przez panel read-only z drugiej strony).
+**`claude-panel`** — wszystko-w-jednym (Claude Code CLI + tmux + ttyd + Node HTTP serwer):
+- `./` → `/app` (cały repo widoczny dla Claude'a — uploady i edycje plików projektu lądują tu).
+- `./claude` → `/home/node/.claude` (sesje JSONL, OAuth, `.credentials.json` — to samo czyta panel pod `CLAUDE_DIR`).
 - `./claude.json` → `/home/node/.claude.json`.
-- `/var/run/docker.sock` → `/var/run/docker.sock` + `group_add: 998` (CLI może odpalać kontenery hostowe).
-- `cpa-tmux` (named volume) → `/tmp/cpa-tmux` (tu żyje socket tmuxa; tmux server biegnie w tym kontenerze).
+- `./claude-panel` → `/srv` (kod panelu, RW dla `node --watch`).
+- `/var/run/docker.sock` → `/var/run/docker.sock` + `group_add: 998` (Claude Code CLI w środku może odpalać kontenery hostowe).
+- Port `8080:8080`.
 
-**`cpa-panel`** — Node HTTP serwer (port 8080):
-- `./claude-panel` → `/srv:ro` (kod panelu read-only; `--watch` reaguje na edycje na hoście).
-- `./claude` → `/data/claude:ro` (panel czyta JSONL z transkryptami i `.credentials.json`).
-- `cpa-tmux` → `/host-tmux:rw` (drugi koniec socketu — panel woła `tmux send-keys` po nim).
-- `./claude-panel/uploads` → `/uploads:rw` (zapisy z `POST /api/send`).
-
-Env panelu:
-- `CLAUDE_DIR=/data/claude`, `PORT=8080`
-- `TMUX_SOCKET=/host-tmux/default`, `TMUX_TARGET=cpa-tmux` (jak puste → `POST /api/send` zwraca 500)
-- `UPLOADS_DIR=/uploads` (gdzie panel zapisuje)
-- `UPLOADS_CLAUDE_PATH=/app/claude-panel/uploads` (jaką ścieżkę panel **wkleja w prompt** — to ścieżka, którą widzi `cpa-claude-code`)
+Env panelu (z `compose.yml`):
+- `CLAUDE_DIR=/home/node/.claude`, `PORT=8080`
+- `TMUX_SOCKET=/tmp/cpa-tmux/default`, `TMUX_TARGET=cpa-tmux` (jak puste → `POST /api/send` zwraca 500)
+- `UPLOADS_DIR=/app/claude-panel/uploads` (gdzie panel zapisuje pliki z `POST /api/send`)
+- `UPLOADS_CLAUDE_PATH=/app/claude-panel/uploads` (ścieżkę pod tym kluczem panel **wkleja w prompt** — bo Claude w tym samym kontenerze widzi tę samą ścieżkę)
 
 ## Panel (`claude-panel/`)
 
 ```
 claude-panel/
   server.js              ← thin entrypoint: http.createServer + listen + WS upgrade dispatch (~20 linii)
-  start.sh               ← entrypoint kontenera: odpala ttyd w tle + `node --watch server.js`
-  Dockerfile             ← node:22-slim + tmux + ttyd binary + ca-certificates
-  tmux.conf              ← config dla tmuxa odpalanego w cpa-claude-code
+  start.sh               ← entrypoint kontenera: tmux+claude (jeśli brak) + ttyd w tle + `node --watch server.js`
+  Dockerfile             ← node:22-slim + tmux + ttyd + git + docker.io + @anthropic-ai/claude-code (multi-arch)
+  tmux.conf              ← config dla tmuxa odpalanego w tym samym kontenerze
   uploads/               ← runtime; czyszczone na boot kontenera (nie na --watch restart)
   src/
     config.js            ← env vary + stałe (CLAUDE_DIR, PORT, MAX_UPLOAD_BYTES, MIME_TO_EXT, STARTUP_ID, …)
@@ -81,10 +80,10 @@ claude-panel/
 
 ### Co panel robi
 
-1. **Przeglądanie sesji + transkryptów.** Czyta `~/.claude/projects/<project>/<sessionId>.jsonl` (zamontowane R/O jako `/data/claude`), parsuje strumień zdarzeń JSONL i renderuje transkrypt w stylu Claude Code (user / assistant / tool_use / tool_result / thinking / system) z usuniętym markupem (`<command-name>`, `<system-reminder>`, `<local-command-*>` itd.).
+1. **Przeglądanie sesji + transkryptów.** Czyta `${CLAUDE_DIR}/projects/<project>/<sessionId>.jsonl` (z bind-mounta na `~/.claude` w kontenerze), parsuje strumień zdarzeń JSONL i renderuje transkrypt w stylu Claude Code (user / assistant / tool_use / tool_result / thinking / system) z usuniętym markupem (`<command-name>`, `<system-reminder>`, `<local-command-*>` itd.).
 2. **Live-tail aktywnej sesji.** `fs.watch` na `PROJECTS_DIR` + `HISTORY_FILE` → SSE eventy do podłączonych przeglądarek przez `/api/stream`. `detectStatus()` zwraca pigułkę "idle / thinking / working" per sesja na bazie ostatniego eventu user/assistant (zaślepione na 10 min, żeby porzucone sesje nie zostawały na "thinking" na zawsze).
 3. **Subscription rate-limit usage** (paski 5h + 7d na górze panelu). `GET /api/usage` czyta `accessToken` z `${CLAUDE_DIR}/.credentials.json` i woła `https://api.anthropic.com/api/oauth/usage` z headerem `anthropic-beta: oauth-2025-04-20`. Cache server-side 60 s (deduplikuje burst z wielu kart); klient pinguje co 5 min + na load. Zwraca `{ok, session: {utilization, resets_at}, week: {utilization, resets_at}}` albo `{ok: false, error: "expired"|"no_token"|...}`. Na 401 panel pokazuje "token wygasł — uruchom claude" do czasu, aż Claude Code odświeży token w `.credentials.json` (panel re-czyta przy każdym fetchu).
-4. **Wysyłanie wiadomości do sesji przez tmux.** `POST /api/send` wkleja text + opcjonalne base64 pliki przez `tmux send-keys -t <TMUX_TARGET>` na shared sockecie `/host-tmux/default`. Pliki idą do `./uploads/`, ale w prompt wklejana jest **ścieżka hostowa** (`UPLOADS_CLAUDE_PATH`, np. `/app/claude-panel/uploads/...`) — taką widzi Claude Code z drugiego kontenera. Obrazki (`image/*`) jako `[image: <path>]` (Claude auto-attach), reszta jako goła ścieżka (Claude `Read`-uje na żądanie).
+4. **Wysyłanie wiadomości do sesji przez tmux.** `POST /api/send` wkleja text + opcjonalne base64 pliki przez `tmux send-keys -t <TMUX_TARGET>` na lokalnym sockecie `${TMUX_SOCKET}`. Pliki idą do `${UPLOADS_DIR}`, a w prompt wklejana jest ścieżka `${UPLOADS_CLAUDE_PATH}/...` — taką widzi Claude Code w tym samym kontenerze. Obrazki (`image/*`) jako `[image: <path>]` (Claude auto-attach), reszta jako goła ścieżka (Claude `Read`-uje na żądanie).
 5. **Wbudowany terminal** (`/terminal`). `start.sh` odpala `ttyd -p 7681 -i 127.0.0.1 -W -b /terminal tmux attach -t cpa-tmux` w tle obok node serwera. Klient panelu otwiera nową kartę pod `/terminal/`, którą serwer Node proxuje (HTTP + WS upgrade) do ttyd. `proxy.js` wstrzykuje też CSS scrollbarów do indeksowego HTML-a ttyd. Pełny tmux w przeglądarce — co widzisz w `docker exec … attach`, widzisz tutaj.
 
 6. **Podgląd pane'a w UI** (toggle "podgląd CLI"). `GET /api/pane` woła `tmux capture-pane -p -t <target>` (cache 500ms po stronie serwera) i zwraca aktualną zawartość pane'a jako tekst. Klient pinguje co 1.5s tylko na widoku "Najnowsze" i tylko gdy toggle jest włączony — pokazuje co Claude Code TUI ma teraz na ekranie (z input boxem włącznie). Drugie źródło prawdy obok JSONL: jak wysyłka mid-thinking siedzi jeszcze w bufferze TUI, tu ją zobaczysz.
@@ -123,15 +122,41 @@ claude-panel/
 - **SSE `scheduleTick`** jest debounce'owany, żeby przy szybkim zapisywaniu JSONL nie generować eventu na linię.
 - **Slash-command meta-entries** (`/clear` itd.) są skipowane w `detectStatus` — wpis usera bez odpowiedzi assistanta nie zostawia "thinking" na zawsze.
 - **`send-keys -l`** (literal mode) — żeby specjalne znaki nie były interpretowane jako tmux key bindings. Newline'y są wycinane z `text` (tmux zjadałby je jako osobne klawisze).
-- **Brak auth.** `POST /api/send` napędzi dowolną sesję tmuxa na zamontowanym sockecie. Nie eksponować portu 8080 poza localhost.
-- **`claude-panel/Dockerfile` startuje `node --watch server.js`.** Edycje `server.js` auto-reload bez rebuildu — `compose.yml` montuje `./claude-panel` read-only do `/srv`.
+- **Brak auth.** `POST /api/send` napędzi dowolną sesję tmuxa w kontenerze. Nie eksponować portu 8080 poza localhost / VPN.
+- **Obraz odpala Claude Code z `--dangerously-skip-permissions`.** To celowe (panel sam moderuje), ale konsument obrazu musi to wiedzieć — całość runtime'u zakłada zaufaną sesję pod kontrolą operatora panelu.
+- **`claude-panel/Dockerfile` startuje `node --watch server.js`.** Edycje `server.js`/`src/**` auto-reload bez rebuildu — `compose.yml` montuje `./claude-panel` RW do `/srv`.
+
+## Release / CI (`.circleci/config.yml`)
+
+- Trigger: push taga `v*` (np. `v0.1.0`). Opcjonalnie ręczny przez Pipeline parameter `manual_build=true`.
+- Build: `docker buildx` na `setup_remote_docker`, multi-arch `linux/amd64,linux/arm64` (QEMU przez `tonistiigi/binfmt`), kontekst `./claude-panel`.
+- Publish: Docker Hub jako `${DOCKERHUB_USER}/claude-panel` z tagami `${CIRCLE_TAG}`, semver short (np. `0.1`, `0`), `latest` + `${sha7}`.
+- Login: `docker/check` z orba `circleci/docker@3.0.1` używa env `DOCKERHUB_USER` + `DOCKERHUB_TOKEN` (z Context `dockerhub-publish` w CircleCI). Token: hub.docker.com → Account Settings → Personal access tokens, scope `Read, Write, Delete`.
+- Project Settings → Advanced → "Build pipelines on tag pushes" musi być **on** (domyślnie off).
+- Repo na Docker Hub auto-tworzy się na pierwszym pushu jako **public** (free tier). Jeśli chcesz prywatne — stwórz repo wcześniej z odpowiednią widocznością albo zmień w *Settings* po pierwszym pushu.
 
 ## Wpinanie do innych projektów (cel długoterminowy)
 
-Panel ma być self-contained — projekt docelowy musi tylko:
+Konsument nie kopiuje już kodu — tylko ściąga obraz:
 
-1. Skopiować katalog `claude-panel/` (lub dodać jako git submodule).
-2. Dodać do swojego `compose.yml` usługi `cpa-claude-code` + `cpa-panel` (analogicznie do tutejszego — z bind-mountami `./` jako `/app`, `./claude` jako `/home/node/.claude` w usłudze CLI i `/data/claude:ro` w usłudze panelu, oraz named volume na socket tmuxa).
-3. Mieć `~/.claude` w jakiejś formie (host albo per-project) i przekazać jako bind-mount.
+```yaml
+services:
+  claude-panel:
+    image: <dockerhub-user>/claude-panel:latest
+    volumes:
+      - .:/app
+      - ./.claude-data:/home/node/.claude
+      - ./.claude.json:/home/node/.claude.json
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      CLAUDE_DIR: /home/node/.claude
+      PORT: "8080"
+      TMUX_SOCKET: /tmp/cpa-tmux/default
+      TMUX_TARGET: cpa-tmux
+      UPLOADS_DIR: /app/claude-panel/uploads
+      UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
+    ports: ["8080:8080"]
+    group_add: ["998"]
+```
 
-Przy zmianach w panelu warto pilnować, żeby nic nie zakładało konkretnego layoutu repo gospodarza poza tym, co jest w `compose.yml`/env.
+Pełny minimalny przykład → `examples/host-project/`. Przy zmianach w panelu pilnować, żeby nic nie zakładało konkretnego layoutu repo gospodarza poza tym, co jest w `compose.yml`/env.
