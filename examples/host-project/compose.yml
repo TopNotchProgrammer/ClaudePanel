@@ -26,7 +26,7 @@ services:
       # UI language: "pl" (default) or "en"
       PANEL_LANG: pl
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     group_add:
       # docker socket gid on the host. `getent group docker | cut -d: -f3` on host.
       - "998"
