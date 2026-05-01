@@ -14,25 +14,28 @@ Przeglądarkowy panel do **monitorowania i sterowania sesją [Claude Code](https
 # compose.yml — w roocie repo, w którym chcesz uruchomić Claude Code
 services:
   claude-panel:
-    image: <dockerhub-user>/claude-panel:latest
+    image: topnotchprogrammer/claude-panel:latest
     container_name: claude-panel
     pull_policy: always
+    working_dir: /app/claude-panel
     volumes:
       - .:/app                                       # twój projekt — Claude może go czytać/edytować
       - ./claude:/home/node/.claude                  # state Claude'a (sesje, OAuth) — przeżywa restart
       - ./claude.json:/home/node/.claude.json        # ustawienia CLI
       - /var/run/docker.sock:/var/run/docker.sock    # Claude może odpalać kontenery hosta (opcjonalne)
+      - ./claude-panel:/srv                          # kod panelu (RW dla `node --watch`)
     environment:
       CLAUDE_DIR: /home/node/.claude
       PORT: "8080"
       TMUX_SOCKET: /tmp/cpa-tmux/default
       TMUX_TARGET: cpa-tmux
-      UPLOADS_DIR: /srv/uploads
-      UPLOADS_CLAUDE_PATH: /srv/uploads
+      UPLOADS_DIR: /app/claude-panel/uploads
+      UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
+      PANEL_LANG: pl                                 # język UI: "pl" (default) lub "en"
     ports:
-      - "127.0.0.1:8080:8080"                        # ⚠️ TYLKO localhost — patrz "Bezpieczeństwo"
+      - "8080:8080"                                  # ⚠️ patrz "Bezpieczeństwo" — bind do localhost jeśli host jest publiczny
     group_add:
-      - "998"                                        # gid grupy `docker` na hoście (`getent group docker`)
+      - "998"                                        # gid grupy `docker` na hoście (`getent group docker | cut -d: -f3`)
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -56,8 +59,9 @@ Pełny przykład: [`examples/host-project/`](./examples/host-project/).
 | `PORT`                  | `8080`                         | port HTTP serwera panelu                                              |
 | `TMUX_SOCKET`           | `/tmp/cpa-tmux/default`        | socket tmuxa (panel woła `send-keys` po nim)                          |
 | `TMUX_TARGET`           | `cpa-tmux`                     | nazwa sesji tmuxa, do której wysyła `POST /api/send`                  |
-| `UPLOADS_DIR`           | `/srv/uploads`                 | gdzie panel zapisuje wgrane pliki                                     |
-| `UPLOADS_CLAUDE_PATH`   | `/srv/uploads`                 | ścieżka, którą panel **wkleja w prompt** (musi być widoczna z Claude) |
+| `UPLOADS_DIR`           | `/app/claude-panel/uploads`    | gdzie panel zapisuje wgrane pliki                                     |
+| `UPLOADS_CLAUDE_PATH`   | `/app/claude-panel/uploads`    | ścieżka, którą panel **wkleja w prompt** (musi być widoczna z Claude) |
+| `PANEL_LANG`            | `pl`                           | język UI: `pl` lub `en` (load-once przy boocie — wymaga recreate)     |
 | `CLAUDE_ARGS`           | `--dangerously-skip-permissions` | argumenty przekazane do `claude` przy starcie sesji                  |
 | `TTYD_PORT`             | `7681`                         | port ttyd (lokalnie, proxy przez `/terminal`)                         |
 
@@ -66,7 +70,7 @@ Porty:
 
 ## Bezpieczeństwo
 
-**Nie wystawiaj `:8080` poza localhost / VPN.** Panel **nie ma autoryzacji** — `POST /api/send` wstrzyknie text do tmuxa, czyli do twojej sesji Claude Code. Default w przykładowym `compose.yml` to `127.0.0.1:8080:8080` — zostaw tak, chyba że wiesz co robisz.
+**Nie wystawiaj `:8080` poza localhost / VPN.** Panel **nie ma autoryzacji** — `POST /api/send` wstrzyknie text do tmuxa, czyli do twojej sesji Claude Code. Przykładowy `compose.yml` bind'uje `8080:8080` do wszystkich interfejsów (wygodne lokalnie). Na publicznym hoście zmień na `127.0.0.1:8080:8080` albo schowaj za reverse-proxy z auth.
 
 **Sesja w kontenerze startuje z `--dangerously-skip-permissions`** (Claude Code odpala tooly bez zatwierdzania). To celowy default dla pracy zdalnej z panelu — panel sam moderuje wysyłanie. Jeśli ci to nie pasuje, ustaw `CLAUDE_ARGS=""` (wtedy musisz zatwierdzać każdy tool z terminala).
 
