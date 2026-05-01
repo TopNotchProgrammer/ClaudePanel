@@ -15,7 +15,6 @@ Kod panelu = `claude-panel/`. Wszystko poza tym katalogiem (`compose.yml`, `star
   claude.json            ← bind-mount na ~/.claude.json (ustawienia CLI)
   claude-panel/          ← właściwy produkt — Dockerfile + kod panelu, patrz §"Panel" niżej
   .circleci/config.yml   ← release pipeline → docker.io/<user>/claude-panel (multi-arch, na tagach v*)
-  examples/host-project/ ← przykład minimalnego compose.yml dla konsumenta obrazu
 ```
 
 Brak root Dockerfile — pełny obraz (panel + Claude Code CLI + tmux + ttyd + docker.io) buduje się z `claude-panel/Dockerfile`.
@@ -165,4 +164,4 @@ services:
     group_add: ["998"]
 ```
 
-Pełny minimalny przykład → `examples/host-project/`. Przy zmianach w panelu pilnować, żeby nic nie zakładało konkretnego layoutu repo gospodarza poza tym, co jest w `compose.yml`/env.
+Quick start dla konsumenta → README. Przy zmianach w panelu pilnować, żeby nic nie zakładało konkretnego layoutu repo gospodarza poza tym, co jest w `compose.yml`/env.

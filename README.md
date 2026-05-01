@@ -17,20 +17,16 @@ services:
     image: topnotchprogrammer/claude-panel:latest
     container_name: claude-panel
     pull_policy: always
-    working_dir: /app/claude-panel
     volumes:
       - .:/app                                       # twój projekt — Claude może go czytać/edytować
       - ./claude:/home/node/.claude                  # state Claude'a (sesje, OAuth) — przeżywa restart
       - ./claude.json:/home/node/.claude.json        # ustawienia CLI
       - /var/run/docker.sock:/var/run/docker.sock    # Claude może odpalać kontenery hosta (opcjonalne)
-      - ./claude-panel:/srv                          # kod panelu (RW dla `node --watch`)
     environment:
       CLAUDE_DIR: /home/node/.claude
       PORT: "8080"
       TMUX_SOCKET: /tmp/cpa-tmux/default
       TMUX_TARGET: cpa-tmux
-      UPLOADS_DIR: /app/claude-panel/uploads
-      UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
       PANEL_LANG: pl                                 # język UI: "pl" (default) lub "en"
     ports:
       - "8080:8080"                                  # ⚠️ patrz "Bezpieczeństwo" — bind do localhost jeśli host jest publiczny
@@ -49,8 +45,6 @@ docker exec -it claude-panel cpa-attach   # przyklejenie terminala do tmuxa z cl
 
 Panel: <http://localhost:8080>. Pierwsze uruchomienie poprosi o zalogowanie do Claude Code w terminalu (state ląduje w `./claude/`, więc kolejne starty są bez logowania).
 
-Pełny przykład: [`examples/host-project/`](./examples/host-project/).
-
 ## Konfiguracja
 
 | Env                     | Default                        | Opis                                                                  |
@@ -59,8 +53,8 @@ Pełny przykład: [`examples/host-project/`](./examples/host-project/).
 | `PORT`                  | `8080`                         | port HTTP serwera panelu                                              |
 | `TMUX_SOCKET`           | `/tmp/cpa-tmux/default`        | socket tmuxa (panel woła `send-keys` po nim)                          |
 | `TMUX_TARGET`           | `cpa-tmux`                     | nazwa sesji tmuxa, do której wysyła `POST /api/send`                  |
-| `UPLOADS_DIR`           | `/app/claude-panel/uploads`    | gdzie panel zapisuje wgrane pliki                                     |
-| `UPLOADS_CLAUDE_PATH`   | `/app/claude-panel/uploads`    | ścieżka, którą panel **wkleja w prompt** (musi być widoczna z Claude) |
+| `UPLOADS_DIR`           | `/tmp/claude-panel-uploads`    | gdzie panel zapisuje wgrane pliki                                     |
+| `UPLOADS_CLAUDE_PATH`   | = `UPLOADS_DIR`                | ścieżka, którą panel **wkleja w prompt** (musi być widoczna z Claude) |
 | `PANEL_LANG`            | `pl`                           | język UI: `pl` lub `en` (load-once przy boocie — wymaga recreate)     |
 | `CLAUDE_ARGS`           | `--dangerously-skip-permissions` | argumenty przekazane do `claude` przy starcie sesji                  |
 | `TTYD_PORT`             | `7681`                         | port ttyd (lokalnie, proxy przez `/terminal`)                         |
