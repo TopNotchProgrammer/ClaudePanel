@@ -2,6 +2,7 @@ services:
   claude-panel:
     build: ./claude-panel
     container_name: claude-panel
+    working_dir: /app/claude-panel
     volumes:
       - .:/app
       - ./claude:/home/node/.claude
@@ -15,6 +16,7 @@ services:
       TMUX_TARGET: cpa-tmux
       UPLOADS_DIR: /app/claude-panel/uploads
       UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
+      PANEL_LANG: pl
     ports:
       - "8080:8080"
     group_add:

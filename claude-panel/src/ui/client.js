@@ -32,11 +32,11 @@ syncViewportHeight();
 function setStatus(status){
   const label = workingEl.querySelector('.label');
   if(status === 'working'){
-    label.textContent = 'pracuję';
+    label.textContent = T.statusWorking;
     workingEl.className = 'pill working';
     workingEl.style.display = '';
   } else if(status === 'thinking'){
-    label.textContent = 'myślę';
+    label.textContent = T.statusThinking;
     workingEl.className = 'pill thinking';
     workingEl.style.display = '';
   } else {
@@ -82,13 +82,13 @@ function renderAttachments(){
     if(a.isImage){
       return '<div class="attach-thumb" data-id="'+a.id+'">'
         + '<img src="'+a.dataUrl+'" alt="'+esc(a.name)+'">'
-        + '<button type="button" class="rm" data-rm="'+a.id+'" aria-label="usuń">×</button>'
+        + '<button type="button" class="rm" data-rm="'+a.id+'" aria-label="'+T.removeBtn+'">×</button>'
         + '</div>';
     }
     return '<div class="attach-file" data-id="'+a.id+'" title="'+esc(a.name)+'">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
       + '<span class="name">'+esc(a.name)+'</span>'
-      + '<button type="button" class="rm" data-rm="'+a.id+'" aria-label="usuń">×</button>'
+      + '<button type="button" class="rm" data-rm="'+a.id+'" aria-label="'+T.removeBtn+'">×</button>'
       + '</div>';
   }).join('');
 }
@@ -109,7 +109,7 @@ function fileToDataUrl(file){
 async function addFiles(files){
   for(const f of files){
     if(!f) continue;
-    if(f.size > 15*1024*1024){ showToast('za duży plik (>15MB): '+f.name, 'err'); continue; }
+    if(f.size > 15*1024*1024){ showToast(T.errFileTooLarge+f.name, 'err'); continue; }
     try{
       const dataUrl = await fileToDataUrl(f);
       const type = f.type || '';
@@ -120,7 +120,7 @@ async function addFiles(files){
         isImage: type.startsWith('image/'),
         dataUrl,
       });
-    }catch(e){ showToast('błąd wczytania: '+e.message, 'err'); }
+    }catch(e){ showToast(T.errFileLoad+e.message, 'err'); }
   }
   renderAttachments();
 }
@@ -174,7 +174,7 @@ function updateQueueIndicator(){
   if(total === 0){
     queueStatusEl.style.display = 'none';
   } else {
-    queueStatusEl.textContent = 'kolejka: ' + total;
+    queueStatusEl.textContent = T.queuePrefix + total;
     queueStatusEl.style.display = '';
   }
 }
@@ -214,7 +214,7 @@ function submitPayload(text, files){
   messageQueue.push({ text, files, pendingId, _pendingId: pendingId });
   if(state.feed && state.view==='latest'){
     const now = Date.now();
-    const previewText = text || (files.length ? '['+files.length+' plik'+(files.length===1?'':'i')+']' : '');
+    const previewText = text || (files.length ? '['+files.length+' '+(files.length===1?T.fileOne:T.fileFew)+']' : '');
     state.feed.events.push({
       kind: 'user',
       text: previewText,
@@ -280,7 +280,7 @@ function handleQueueEvent(d){
     if(i >= 0){ events.splice(i, 1); dirty = true; }
   } else if(ev === 'error'){
     const pe = findPendingByQid(id);
-    if(pe){ pe._error = d.error || 'błąd'; dirty = true; }
+    if(pe){ pe._error = d.error || T.errLabel; dirty = true; }
   } else if(ev === 'cleared'){
     // Drop any pending whose queue id is no longer in the snapshot.
     const liveIds = new Set((d.queue||[]).map(q => q.id));
@@ -305,9 +305,9 @@ if(interruptBtn) interruptBtn.addEventListener('click', ()=>{
     .then(r=>r.json().catch(()=>({})))
     .then(d=>{
       if(d && d.ok){ flipToIdle(); showToast('przerwano', 'ok'); }
-      else showToast('błąd: '+((d && d.error) || ''), 'err');
+      else showToast(T.errPrefix+((d && d.error) || ''), 'err');
     })
-    .catch(e=>showToast('błąd: '+e.message, 'err'));
+    .catch(e=>showToast(T.errPrefix+e.message, 'err'));
 });
 
 async function sendBtw(question){
@@ -331,16 +331,16 @@ async function sendBtw(question){
     if(r.ok && d.ok && d.id && state.feed){
       const ev = state.feed.events.find(e => e._btwLocalId === localPid);
       if(ev){ ev._btwId = d.id; }
-      showToast('/btw wysłane', 'ok');
+      showToast(T.btwSent, 'ok');
     } else {
       const ev = state.feed && state.feed.events.find(e => e._btwLocalId === localPid);
       if(ev){ ev._btwLive = false; ev._btwError = (d && d.error) || ('HTTP '+r.status); state.lastRenderedMaxIndex=null; if(state.view==='latest') renderLatest({mode:'newer'}); }
-      showToast('błąd /btw: '+((d && d.error) || r.status), 'err');
+      showToast(T.errBtwPrefix+((d && d.error) || r.status), 'err');
     }
   }catch(e){
     const ev = state.feed && state.feed.events.find(e => e._btwLocalId === localPid);
     if(ev){ ev._btwLive = false; ev._btwError = e.message; state.lastRenderedMaxIndex=null; if(state.view==='latest') renderLatest({mode:'newer'}); }
-    showToast('błąd /btw: '+e.message, 'err');
+    showToast(T.errBtwPrefix+e.message, 'err');
   }
 }
 function handleBtwTick(d){
@@ -380,7 +380,7 @@ document.addEventListener('click', (e)=>{
   if(!id) return;
   fetch('/api/btw/close?id='+encodeURIComponent(id), {method:'POST'})
     .then(r=>r.json().catch(()=>({})))
-    .then(d=>{ if(!d || !d.ok) showToast('błąd zamknięcia: '+((d && d.error) || ''), 'err'); });
+    .then(d=>{ if(!d || !d.ok) showToast(T.errCloseBtw+((d && d.error) || ''), 'err'); });
 });
 function dismissPendingLocal(pid){
   if(!state.feed) return;
@@ -407,7 +407,7 @@ document.addEventListener('click', (e)=>{
   if(!id) return;
   fetch('/api/queue/cancel?id='+encodeURIComponent(id), {method:'POST'})
     .then(r=>r.json().catch(()=>({})))
-    .then(d=>{ if(!d.ok) showToast('za późno — w drodze do tmux', 'err'); });
+    .then(d=>{ if(!d.ok) showToast(T.errTooLate, 'err'); });
 });
 document.addEventListener('click', (e)=>{
   const btn = e.target && e.target.closest && e.target.closest('.pending-retry');
@@ -432,15 +432,15 @@ async function processQueue(){
       if(r.ok){
         const pe = findPendingByPid(msg._pendingId);
         if(pe && d.id){ pe._queueId = d.id; }
-        if(d.queued) showToast('w kolejce', 'ok');
-        else showToast('wysłano'+(d.files?(' ('+d.files+' plik'+(d.files===1?'':(d.files<5?'i':'ów'))+')'):''), 'ok');
+        if(d.queued) showToast(T.toastQueued, 'ok');
+        else showToast(T.toastSent+(d.files?(' ('+d.files+' '+fileWord(d.files)+')'):''), 'ok');
       } else {
         const pe = findPendingByPid(msg._pendingId);
         if(pe){ pe._error = d.error || ('HTTP '+r.status); state.lastRenderedMaxIndex = null; if(state.view==='latest') renderLatest({mode:'newer'}); }
-        showToast('błąd: ' + (d.error || r.status), 'err');
+        showToast(T.errPrefix + (d.error || r.status), 'err');
       }
     }catch(e){
-      const msg2 = e.name === 'AbortError' ? 'timeout — sprawdź tmux' : ('błąd: ' + e.message);
+      const msg2 = e.name === 'AbortError' ? T.errTimeout : (T.errPrefix + e.message);
       const pe = findPendingByPid(msg._pendingId);
       if(pe){ pe._error = msg2; state.lastRenderedMaxIndex = null; if(state.view==='latest') renderLatest({mode:'newer'}); }
       showToast(msg2, 'err');
@@ -502,11 +502,11 @@ async function pollPaneOnce(){
       panePreviewPre.textContent = (d.text || '').replace(/\\s+$/, '');
     } else {
       panePreview.classList.add('err');
-      panePreviewPre.textContent = 'błąd: ' + ((d && d.error) || ('HTTP '+r.status));
+      panePreviewPre.textContent = T.errPrefix + ((d && d.error) || ('HTTP '+r.status));
     }
   } catch(e) {
     panePreview.classList.add('err');
-    panePreviewPre.textContent = 'błąd: ' + e.message;
+    panePreviewPre.textContent = T.errPrefix + e.message;
   } finally {
     panePollPending = false;
   }
@@ -558,10 +558,15 @@ function fmtDate(ts){
   const sameDay = d.toDateString() === now.toDateString();
   const y = new Date(now); y.setDate(y.getDate()-1);
   const yest = d.toDateString() === y.toDateString();
-  const time = d.toLocaleTimeString('pl',{hour:'2-digit',minute:'2-digit'});
-  if(sameDay) return 'dziś '+time;
-  if(yest) return 'wczoraj '+time;
-  return d.toLocaleDateString('pl',{day:'2-digit',month:'short'})+' '+time;
+  const time = d.toLocaleTimeString(T.locale,{hour:'2-digit',minute:'2-digit'});
+  if(sameDay) return T.today+' '+time;
+  if(yest) return T.yesterday+' '+time;
+  return d.toLocaleDateString(T.locale,{day:'2-digit',month:'short'})+' '+time;
+}
+function fileWord(n){
+  if(n===1) return T.fileOne;
+  if(T.locale==='pl' && n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20)) return T.fileFew;
+  return T.fileMany;
 }
 function fmtDuration(a,b){
   if(!a||!b) return '';
@@ -589,7 +594,7 @@ function searchMatch(e,q){
 
 function renderSessions(){
   state.view='sessions';
-  titleEl.textContent='Claude panel';
+  titleEl.textContent=T.appTitle;
   backEl.style.display='none';
   tabsWrap.style.display='';
   filterWrap.style.display='none';
@@ -598,16 +603,16 @@ function renderSessions(){
   applyPaneVisibility();
   setStatus('idle');
   setViewTab('sessions');
-  qEl.placeholder='szukaj w sesjach…';
+  qEl.placeholder=T.searchSessionsPh;
   qEl.value=state.query||'';
   const q=(state.query||'').toLowerCase();
   const list=(state.sessions||[]).filter(s=>!q||(s.firstUser||'').toLowerCase().includes(q)||s.id.includes(q));
   counterEl.textContent=list.length+'';
-  if(!list.length){ main.innerHTML='<div class="empty">brak sesji</div>'; return; }
+  if(!list.length){ main.innerHTML='<div class="empty">'+T.emptyNoSessions+'</div>'; return; }
   main.innerHTML=list.map(s=>{
     const dur=fmtDuration(s.firstTs,s.lastTs);
     return '<a class="session" href="#/s/'+encodeURIComponent(s.project)+'/'+encodeURIComponent(s.id)+'">'
-      +'<div class="title">'+(esc(s.firstUser)||'<span style="color:var(--muted)">(bez pierwszej wiadomości)</span>')+'</div>'
+      +'<div class="title">'+(esc(s.firstUser)||'<span style="color:var(--muted)">'+T.emptyNoFirstMessage+'</span>')+'</div>'
       +'<div class="meta">'
       +'<span>'+fmtDate(s.lastTs)+'</span>'
       +(dur?'<span class="tag">'+dur+'</span>':'')
@@ -621,7 +626,7 @@ function renderSessions(){
 
 function renderLatest(opts){
   state.view='latest';
-  titleEl.textContent='Najnowsze';
+  titleEl.textContent=T.titleLatest;
   backEl.style.display='none';
   tabsWrap.style.display='';
   filterWrap.style.display='none';
@@ -629,7 +634,7 @@ function renderLatest(opts){
   setInfoButtonVisible(true);
   applyPaneVisibility();
   setViewTab('latest');
-  qEl.placeholder='szukaj w najnowszych…';
+  qEl.placeholder=T.searchLatestPh;
   qEl.value=state.query||'';
   const f=state.feed;
   setStatus(f ? f.status : 'idle');
@@ -639,8 +644,8 @@ function renderLatest(opts){
   const btwJustClosed = wasBtwActive && !isBtwActive;
   if(!f){
     const msg = state.feedEmptyReason==='fresh-claude'
-      ? 'świeża sesja claude — napisz pierwszą wiadomość'
-      : 'brak sesji';
+      ? T.emptyFreshSession
+      : T.emptyNoSessions;
     main.innerHTML='<div class="empty">'+msg+'</div>';
     infoPanel.innerHTML='';
     counterEl.textContent='0/0';
@@ -652,12 +657,12 @@ function renderLatest(opts){
   if(q) evs=evs.filter(e=>searchMatch(e,q));
   counterEl.textContent=f.events.length+'/'+f.totalEvents;
   const title=(f.meta&&f.meta.firstUser)?f.meta.firstUser:f.sessionId;
-  const header='<a class="session" href="#/s/'+encodeURIComponent(f.project)+'/'+encodeURIComponent(f.sessionId)+'"><div class="title">'+esc(title)+'</div><div class="meta"><span>otwórz całą sesję →</span>'+(f.meta?'<span class="tag">'+f.meta.userCount+' user</span><span class="tag">'+f.meta.asstCount+' claude</span><span class="tag">'+f.meta.toolCount+' tool</span>':'')+'<span class="tag" id="live-dot">● live</span></div></a>';
+  const header='<a class="session" href="#/s/'+encodeURIComponent(f.project)+'/'+encodeURIComponent(f.sessionId)+'"><div class="title">'+esc(title)+'</div><div class="meta"><span>'+T.emptyOpenFullSession+'</span>'+(f.meta?'<span class="tag">'+f.meta.userCount+' user</span><span class="tag">'+f.meta.asstCount+' claude</span><span class="tag">'+f.meta.toolCount+' tool</span>':'')+'<span class="tag" id="live-dot">● '+T.liveDot+'</span></div></a>';
   infoPanel.innerHTML=header;
   const rendered=evs.map(renderEvent).join('');
   const topSentinel=f.noMoreOlder
-    ? '<div class="empty" style="padding:20px 10px">początek sesji</div>'
-    : '<div id="latest-sentinel" class="empty" style="padding:24px 10px">ładowanie starszych…</div>';
+    ? '<div class="empty" style="padding:20px 10px">'+T.emptySessionStart+'</div>'
+    : '<div id="latest-sentinel" class="empty" style="padding:24px 10px">'+T.emptyLoadingOlder+'</div>';
 
   const mode=opts&&opts.mode;
   const prevH=main.scrollHeight;
@@ -698,7 +703,7 @@ function renderLatest(opts){
 
 function renderCommands(){
   state.view='commands';
-  titleEl.textContent='Komendy';
+  titleEl.textContent=T.titleCommands;
   backEl.style.display='none';
   tabsWrap.style.display='';
   filterWrap.style.display='none';
@@ -707,17 +712,17 @@ function renderCommands(){
   applyPaneVisibility();
   setStatus('idle');
   setViewTab('commands');
-  qEl.placeholder='szukaj w komendach…';
+  qEl.placeholder=T.searchCommandsPh;
   qEl.value=state.query||'';
   const q=(state.query||'').toLowerCase();
   const list=(state.commands||[]).filter(c=>!q||(c.display||'').toLowerCase().includes(q));
   counterEl.textContent=list.length+'';
-  if(!list.length){ main.innerHTML='<div class="empty">brak komend</div>'; return; }
+  if(!list.length){ main.innerHTML='<div class="empty">'+T.emptyNoCommands+'</div>'; return; }
   const byId={};
   for(const s of (state.sessions||[])) byId[s.id]=s;
   main.innerHTML=list.map(c=>{
     const sess=byId[c.sessionId];
-    const when='<div class="when"><span>'+fmtDate(c.timestamp)+'</span>'+(c.project?'<span class="sep">·</span><span>'+esc(c.project)+'</span>':'')+(sess?'<span class="sep">·</span><span style="color:var(--accent)">otwórz →</span>':'')+'</div>';
+    const when='<div class="when"><span>'+fmtDate(c.timestamp)+'</span>'+(c.project?'<span class="sep">·</span><span>'+esc(c.project)+'</span>':'')+(sess?'<span class="sep">·</span><span style="color:var(--accent)">'+T.emptyOpen+'</span>':'')+'</div>';
     const body='<div class="t">'+esc(c.display)+'</div>';
     if(sess){
       const href='#/s/'+encodeURIComponent(sess.project)+'/'+encodeURIComponent(c.sessionId)+'/'+c.timestamp;
@@ -738,7 +743,7 @@ function renderSession(){
   setInfoButtonVisible(false);
   applyPaneVisibility();
   setStatus('idle');
-  qEl.placeholder='szukaj w sesji…';
+  qEl.placeholder=T.searchInSessionPh;
   qEl.value=state.query||'';
   const filterSel=document.getElementById('filter-select');
   if(filterSel) filterSel.value=state.filter;
@@ -747,7 +752,7 @@ function renderSession(){
   if(state.filter!=='all') evs=evs.filter(e=>e.kind===state.filter);
   if(q) evs=evs.filter(e=>searchMatch(e,q));
   counterEl.textContent=evs.length+'';
-  if(!evs.length){ main.innerHTML='<div class="empty">brak wyników</div>'; return; }
+  if(!evs.length){ main.innerHTML='<div class="empty">'+T.emptyNoResults+'</div>'; return; }
   main.innerHTML=evs.map(renderEvent).join('');
 }
 
@@ -757,12 +762,35 @@ function renderMarkdown(text){
   let s=String(text);
   s=s.replace(/\`\`\`([a-zA-Z0-9_+\\-.]*)\\n?([\\s\\S]*?)\`\`\`/g,function(_,lang,code){
     codeBlocks.push({lang:lang,code:code.replace(/\\n$/,'')});
-    return ' CODE'+(codeBlocks.length-1)+' ';
+    return '\\x00CODE'+(codeBlocks.length-1)+'\\x00';
   });
   s=s.replace(/\`([^\`\\n]+)\`/g,function(_,code){
     inlineCodes.push(code);
-    return ' IC'+(inlineCodes.length-1)+' ';
+    return '\\x00IC'+(inlineCodes.length-1)+'\\x00';
   });
+  // Auto-detect Unicode box-drawing / ASCII +---+ blocks (tables, trees) and
+  // promote them to fenced code so monospace + whitespace are preserved.
+  // Bare "|" is intentionally excluded — it belongs to markdown pipe-tables.
+  {
+    const _bx=/^[ \\t]*[\\u2500-\\u257F]/;
+    const _ascii=/^[ \\t]*\\+[-=+]{2,}\\+[ \\t]*$/;
+    const _isBox=function(l){ return _bx.test(l) || _ascii.test(l); };
+    const _src=s.split('\\n');
+    const _out=[]; let _i=0;
+    while(_i<_src.length){
+      if(_isBox(_src[_i])){
+        let _j=_i+1;
+        while(_j<_src.length && _isBox(_src[_j])) _j++;
+        if(_j-_i>=2){
+          codeBlocks.push({lang:'',code:_src.slice(_i,_j).join('\\n')});
+          _out.push('\\x00CODE'+(codeBlocks.length-1)+'\\x00');
+          _i=_j; continue;
+        }
+      }
+      _out.push(_src[_i]); _i++;
+    }
+    s=_out.join('\\n');
+  }
   s=esc(s);
   const lines=s.split('\\n');
   const out=[];
@@ -847,7 +875,7 @@ function renderMarkdown(text){
       out.push('<p>'+m[1]+'</p>'); continue;
     }
     if(/^\\s*$/.test(line)){ flushPara(); flushList(); flushQuote(); continue; }
-    if(/^ CODE\\d+ \\s*$/.test(line)){
+    if(/^\\x00CODE\\d+\\x00\\s*$/.test(line)){
       flushPara(); flushList(); flushQuote();
       out.push(line); continue;
     }
@@ -863,8 +891,8 @@ function renderMarkdown(text){
     const safe=/^(https?:|\\/|#|mailto:)/i.test(u)?u:'#';
     return '<a href="'+safe+'" target="_blank" rel="noopener">'+t+'</a>';
   });
-  html=html.replace(/ IC(\\d+) /g,function(_,i){ return '<code>'+esc(inlineCodes[+i])+'</code>'; });
-  html=html.replace(/ CODE(\\d+) /g,function(_,i){
+  html=html.replace(/\\x00IC(\\d+)\\x00/g,function(_,i){ return '<code>'+esc(inlineCodes[+i])+'</code>'; });
+  html=html.replace(/\\x00CODE(\\d+)\\x00/g,function(_,i){
     const cb=codeBlocks[+i];
     return '<pre><code'+(cb.lang?' data-lang="'+esc(cb.lang)+'"':'')+'>'+esc(cb.code)+'</code></pre>';
   });
@@ -901,7 +929,7 @@ function renderEditDiff(input){
   if(diff.length>200){
     const head=diff.slice(0,100).map(renderDiffLine).join('');
     const tail=diff.slice(-50).map(renderDiffLine).join('');
-    return '<div class="diff">'+head+'<div class="diff-skip">… '+(diff.length-150)+' linii pominięte …</div>'+tail+'</div>';
+    return '<div class="diff">'+head+'<div class="diff-skip">… '+(diff.length-150)+' '+T.linesSkipped+' …</div>'+tail+'</div>';
   }
   return '<div class="diff">'+diff.map(renderDiffLine).join('')+'</div>';
 }
@@ -928,13 +956,13 @@ function renderEvent(e){
   const time=e.ts?fmtDate(Date.parse(e.ts)):'';
   if(e.kind === 'btw'){
     const q = esc(e._btwQuestion || '');
-    const text = e._btwText || (e._btwError ? ('błąd: '+e._btwError) : (e._btwLive ? 'czekam na claude…' : ''));
+    const text = e._btwText || (e._btwError ? (T.errPrefix+e._btwError) : (e._btwLive ? T.waitingClaude : ''));
     let cls = 'event btw';
     if(e._btwLive) cls += ' live';
     if(e._btwClosed) cls += ' closed';
     if(e._btwError) cls += ' err';
     const closeBtn = (e._btwId && e._btwLive)
-      ? '<button class="pending-cancel btw-close-btn" data-btw-id="'+esc(e._btwId)+'" title="zamknij /btw (Escape)" aria-label="zamknij">×</button>'
+      ? '<button class="pending-cancel btw-close-btn" data-btw-id="'+esc(e._btwId)+'" title="'+T.closeBtn+' /btw (Escape)" aria-label="'+T.closeBtn+'">×</button>'
       : '';
     const tsHtml = time ? '<span style="margin-left:auto">'+time+'</span>' : '<span style="flex:1"></span>';
     const head = '<div class="h"><span class="k">btw</span>'+tsHtml+closeBtn+'</div>';
@@ -942,7 +970,7 @@ function renderEvent(e){
       + (text ? '<pre class="btw-pane">'+esc(text)+'</pre>' : '');
     return '<div class="'+cls+'">'+head+body+'</div>';
   }
-  const label=({user:'user',assistant:'claude',tool_use:'tool',tool_result:'result',system:'system',thinking:'thinking'}[e.kind])||e.kind;
+  const label=({user:T.evUser,assistant:T.evAssistant,tool_use:T.evTool,tool_result:T.evResult,system:T.evSystem,thinking:T.evThinking}[e.kind])||e.kind;
   // X button on pending: server-cancel if cancellable, local-dismiss if errored/stuck.
   // Retry button (↻) appears alongside × when stuck/errored and we have the original payload.
   let xBtn = '';
@@ -952,12 +980,12 @@ function renderEvent(e){
     const stuck = !errored && (Date.now() - (e._pendingAt||0)) > 30000;
     const sentOrSending = e._serverState === 'sending' || e._serverState === 'sent';
     if(errored || stuck){
-      xBtn = '<button class="pending-cancel" data-local-pid="'+esc(e._pendingId||'')+'" title="zamknij" aria-label="zamknij">×</button>';
+      xBtn = '<button class="pending-cancel" data-local-pid="'+esc(e._pendingId||'')+'" title="'+T.closeBtn+'" aria-label="'+T.closeBtn+'">×</button>';
       if((e._origText && e._origText.length) || (e._origFiles && e._origFiles.length)){
-        retryBtn = '<button class="pending-retry" data-retry-pid="'+esc(e._pendingId||'')+'" title="spróbuj ponownie" aria-label="spróbuj ponownie">↻</button>';
+        retryBtn = '<button class="pending-retry" data-retry-pid="'+esc(e._pendingId||'')+'" title="'+T.retryBtn+'" aria-label="'+T.retryBtn+'">↻</button>';
       }
     } else if(e._queueId && !sentOrSending){
-      xBtn = '<button class="pending-cancel" data-cancel-id="'+esc(e._queueId)+'" title="anuluj" aria-label="anuluj">×</button>';
+      xBtn = '<button class="pending-cancel" data-cancel-id="'+esc(e._queueId)+'" title="'+T.cancelBtn+'" aria-label="'+T.cancelBtn+'">×</button>';
     }
   }
   const cancelBtn = retryBtn + xBtn;
@@ -974,7 +1002,7 @@ function renderEvent(e){
     }
     body=(summary?'<pre>'+esc(summary)+'</pre>':'')
        +extra
-       +'<details class="more"><summary>pełny input</summary><pre>'+esc(JSON.stringify(e.input,null,2))+'</pre></details>';
+       +'<details class="more"><summary>'+T.fullInput+'</summary><pre>'+esc(JSON.stringify(e.input,null,2))+'</pre></details>';
   } else if(e.kind==='tool_result'){
     const t=e.text||'';
     if(t.length>1200){
@@ -1204,21 +1232,21 @@ async function route(){
     const id=decodeURIComponent(parts[1]||'');
     if(!state.session || state.session.id!==id) state.filter='all';
     state.focusTs = parts[2] ? Number(parts[2]) : null;
-    main.innerHTML='<div class="empty">ładowanie…</div>';
+    main.innerHTML='<div class="empty">'+T.emptyLoading+'</div>';
     try{ await loadSession(project,id); renderSession(); focusEvent(); }
-    catch(e){ main.innerHTML='<div class="empty">błąd: '+esc(e.message)+'</div>'; }
+    catch(e){ main.innerHTML='<div class="empty">'+T.errPrefix+esc(e.message)+'</div>'; }
   } else if(h==='/commands'){
-    main.innerHTML='<div class="empty">ładowanie…</div>';
+    main.innerHTML='<div class="empty">'+T.emptyLoading+'</div>';
     state.commands=null; // refetch on each visit
     await loadCommands();
     renderCommands();
   } else if(h==='/sessions'){
-    main.innerHTML='<div class="empty">ładowanie…</div>';
+    main.innerHTML='<div class="empty">'+T.emptyLoading+'</div>';
     state.sessions=null; // refetch on each visit
     await loadSessions();
     renderSessions();
   } else {
-    main.innerHTML='<div class="empty">ładowanie…</div>';
+    main.innerHTML='<div class="empty">'+T.emptyLoading+'</div>';
     state.lastRenderedMaxIndex=null;
     await initLatest();
     renderLatest({mode:'initial'});
@@ -1287,12 +1315,12 @@ function fmtReset(iso, withDate){
   if(!iso) return '';
   const d = new Date(iso);
   if(isNaN(d)) return '';
-  const time = d.toLocaleTimeString('pl',{hour:'2-digit',minute:'2-digit'});
+  const time = d.toLocaleTimeString(T.locale,{hour:'2-digit',minute:'2-digit'});
   if(withDate){
-    const date = d.toLocaleDateString('pl',{day:'2-digit',month:'2-digit'});
-    return 'reset '+date+' '+time;
+    const date = d.toLocaleDateString(T.locale,{day:'2-digit',month:'2-digit'});
+    return T.usageReset+' '+date+' '+time;
   }
-  return 'reset '+time;
+  return T.usageReset+' '+time;
 }
 function setUsageRow(rowId, item, withDate){
   const row = document.getElementById(rowId);
@@ -1315,7 +1343,7 @@ function renderUsage(u){
     sesRow.style.display='';
     sesRow.querySelector('.usage-fill').style.width='0%';
     sesRow.querySelector('.usage-pct').textContent='—';
-    const errMsg = u.error==='expired' ? 'token wygasł — uruchom claude' : u.error==='no_token' ? 'brak tokenu' : 'niedostępne';
+    const errMsg = u.error==='expired' ? T.usageExpired : u.error==='no_token' ? T.usageNoToken : T.usageUnavailable;
     sesRow.querySelector('.usage-reset').textContent = errMsg;
     document.getElementById('usage-week').style.display='none';
     return;

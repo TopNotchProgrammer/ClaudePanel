@@ -1,4 +1,4 @@
-module.exports = `
+module.exports = (t) => `
 :root{
   --bg:#0d1117; --panel:#161b22; --panel2:#1c222b; --border:#30363d;
   --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
@@ -55,14 +55,14 @@ input[type=search]:focus{border-color:var(--accent)}
 .event.system{border-left-color:var(--sys)} .event.system .k{color:var(--sys)}
 .event.thinking{border-left-color:#555;opacity:.75} .event.thinking .k{color:var(--muted)}
 .event.pending{opacity:.55;border-left-style:dashed}
-.event.pending .k::after{content:" · w kolejce…";color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-style:italic}
-.event.pending.p-sending .k::after{content:" · wysyłam…"}
+.event.pending .k::after{content:" · ${t.statusInQueue}";color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-style:italic}
+.event.pending.p-sending .k::after{content:" · ${t.statusSending}"}
 .event.pending.p-sent{opacity:.7;border-left-style:solid}
-.event.pending.p-sent .k::after{content:" · wysłane, czekam na claude…"}
+.event.pending.p-sent .k::after{content:" · ${t.statusSentWaiting}"}
 .event.pending.stuck{opacity:.85;border-left-color:var(--err)}
-.event.pending.stuck .k::after{content:" · brak odpowiedzi z tmux";color:var(--err);font-style:italic}
+.event.pending.stuck .k::after{content:" · ${t.statusNoResponse}";color:var(--err);font-style:italic}
 .event.pending.errored{opacity:.85;border-left-color:var(--err)}
-.event.pending.errored .k::after{content:" · błąd wysyłki";color:var(--err);font-style:italic}
+.event.pending.errored .k::after{content:" · ${t.statusSendError}";color:var(--err);font-style:italic}
 .pending-cancel{margin-left:auto;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0 6px;border-radius:4px}
 .pending-cancel:hover{background:var(--panel2);color:var(--err)}
 .pending-retry{background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 8px;border-radius:4px}
@@ -75,7 +75,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .event.btw .k{color:var(--sys)}
 .event.btw .k::after{content:" · /btw";color:var(--muted);font-weight:400}
 .event.btw.live .k::after{content:" · /btw · live"}
-.event.btw.closed .k::after{content:" · /btw · zamknięte"}
+.event.btw.closed .k::after{content:" · /btw · ${t.btwClosed}"}
 .event.btw .btw-q{margin:4px 0 6px;font-weight:500;color:var(--text)}
 .event.btw pre.btw-pane{background:#000;color:#cdd9e5;border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin:0;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;overflow-x:auto;max-height:320px;overflow-y:auto}
 body.btw-active main{padding:0;max-width:none;display:flex;flex-direction:column;overflow:hidden}
@@ -97,9 +97,9 @@ details.more[open] summary::before{content:"▾ "}
 .long-wrap.collapsed > .body,.long-wrap.collapsed > pre{max-height:24em;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 80%,transparent 100%);mask-image:linear-gradient(180deg,#000 80%,transparent 100%)}
 .long-wrap > .long-toggle{margin-top:6px;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 0;display:inline-block;font:inherit;font-size:12px}
 .long-wrap > .long-toggle:hover{color:var(--accent)}
-.long-wrap.collapsed > .long-toggle::before{content:"▸ pokaż całość"}
-.long-wrap:not(.collapsed) > .long-toggle::before{content:"▾ zwiń"}
-.long-wrap > .long-toggle[data-len]::after{content:" (" attr(data-len) " znaków)"}
+.long-wrap.collapsed > .long-toggle::before{content:"▸ ${t.showAll}"}
+.long-wrap:not(.collapsed) > .long-toggle::before{content:"▾ ${t.collapse}"}
+.long-wrap > .long-toggle[data-len]::after{content:" (" attr(data-len) " ${t.charsSuffix})"}
 .cmd{display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin:6px 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:inherit;text-decoration:none}
 a.cmd:hover{border-color:var(--accent);text-decoration:none}
 .cmd.nolink{opacity:.7}
@@ -125,7 +125,7 @@ a.cmd:hover{border-color:var(--accent);text-decoration:none}
 .attach-file svg{flex-shrink:0;width:18px;height:18px;color:var(--muted)}
 .attach-file .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .attach-file .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:0;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;min-height:0}
-.send-form.drag-over::after{content:"upuść plik";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(88,166,255,.12);border:2px dashed var(--accent);border-radius:8px;color:var(--accent);font-weight:600;pointer-events:none;z-index:2}
+.send-form.drag-over::after{content:"${t.dropFile}";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(88,166,255,.12);border:2px dashed var(--accent);border-radius:8px;color:var(--accent);font-weight:600;pointer-events:none;z-index:2}
 #live-dot{color:#7ee787;border-color:#7ee787;animation:pulse 1.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .btn{display:inline-block;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font:inherit;cursor:pointer}

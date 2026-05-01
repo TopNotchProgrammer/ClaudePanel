@@ -8,6 +8,7 @@ const UPLOADS_DIR = process.env.UPLOADS_DIR || "/tmp/claude-panel-uploads";
 const UPLOADS_CLAUDE_PATH = process.env.UPLOADS_CLAUDE_PATH || UPLOADS_DIR;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const STARTUP_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const LANG = (process.env.PANEL_LANG === "en" || process.env.PANEL_LANG === "pl") ? process.env.PANEL_LANG : "pl";
 
 const MIME_TO_EXT = {
   "image/png": "png",
@@ -45,5 +46,6 @@ module.exports = {
   UPLOADS_CLAUDE_PATH,
   MAX_UPLOAD_BYTES,
   STARTUP_ID,
+  LANG,
   MIME_TO_EXT,
 };

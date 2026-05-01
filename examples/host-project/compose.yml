@@ -8,7 +8,7 @@
 
 services:
   claude-panel:
-    image: PLACEHOLDER_DOCKERHUB_USER/claude-panel:latest
+    image: topnotchprogrammer/claude-panel:latest
     container_name: claude-panel
     pull_policy: always
     volumes:
@@ -23,6 +23,8 @@ services:
       TMUX_TARGET: cpa-tmux
       UPLOADS_DIR: /srv/uploads
       UPLOADS_CLAUDE_PATH: /srv/uploads
+      # UI language: "pl" (default) or "en"
+      PANEL_LANG: pl
     ports:
       - "127.0.0.1:8080:8080"
     group_add:

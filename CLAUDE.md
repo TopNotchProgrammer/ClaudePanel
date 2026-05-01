@@ -49,6 +49,7 @@ Env panelu (z `compose.yml`):
 - `TMUX_SOCKET=/tmp/cpa-tmux/default`, `TMUX_TARGET=cpa-tmux` (jak puste → `POST /api/send` zwraca 500)
 - `UPLOADS_DIR=/app/claude-panel/uploads` (gdzie panel zapisuje pliki z `POST /api/send`)
 - `UPLOADS_CLAUDE_PATH=/app/claude-panel/uploads` (ścieżkę pod tym kluczem panel **wkleja w prompt** — bo Claude w tym samym kontenerze widzi tę samą ścieżkę)
+- `PANEL_LANG=pl` (język UI: `pl` lub `en`, domyślnie `pl`. Ustawiane przy boocie kontenera; stringi wstrzykiwane jako `window.T` do klienta przez `src/ui/i18n.js`)
 
 ## Panel (`claude-panel/`)
 
@@ -60,7 +61,7 @@ claude-panel/
   tmux.conf              ← config dla tmuxa odpalanego w tym samym kontenerze
   uploads/               ← runtime; czyszczone na boot kontenera (nie na --watch restart)
   src/
-    config.js            ← env vary + stałe (CLAUDE_DIR, PORT, MAX_UPLOAD_BYTES, MIME_TO_EXT, STARTUP_ID, …)
+    config.js            ← env vary + stałe (CLAUDE_DIR, PORT, MAX_UPLOAD_BYTES, MIME_TO_EXT, STARTUP_ID, LANG, …)
     files.js             ← saveFile, extFromName, sanitizeExt + mkdir uploads + wipe-on-boot
     sessions.js          ← readJSONL + rawCache, listSessions, summarize/parse/detectStatus, readHistory, stripMarkup
     sse.js               ← sseClients Set + broadcast + scheduleTick + startWatchers(fs.watch)
@@ -70,10 +71,11 @@ claude-panel/
     usage.js             ← fetchUsage: api.anthropic.com/api/oauth/usage z OAuth tokenem z .credentials.json, cache 60s
     routes.js            ← dispatcher: GET / + /terminal + /healthz + /api/{sessions,session,latest,stream,commands,send,send-config,usage,pane,queue,queue/cancel,queue/clear,interrupt}
     ui/
-      styles.js          ← CSS (template-literal)
-      body.js            ← HTML body markup
-      client.js          ← klient JS (~700 linii: routing, rendering, polling, attachments, SSE, pending render, pane preview)
-      index.js           ← skleja `<!doctype>…<style>…</style>…<script>…</script>` w jeden string
+      i18n.js            ← słowniki `pl` + `en` (locale, etykiety, plurale `plik/pliki/plików`); `pick(lang)` → dict
+      styles.js          ← `(t) => CSS` (interpoluje stringi do pseudo-elementów `::after/::before`)
+      body.js            ← `(t) => HTML body` markup z etykietami i placeholderami
+      client.js          ← klient JS (~700 linii: routing, rendering, polling, attachments, SSE, pending render, pane preview); używa globalnego `window.T` dla wszystkich user-facing stringów
+      index.js           ← czyta `LANG` z config, woła `pick(LANG)` i wstrzykuje wynik trzykrotnie: jako `<html lang="…">`, jako `styles(t)`/`body(t)`, oraz `<script>window.T=${JSON.stringify(t)}</script>` przed `client.js`
 ```
 
 `node --watch server.js` chodzi po grafie `require(...)`, więc edycje w `src/**.js` triggerują restart.
@@ -88,7 +90,9 @@ claude-panel/
 
 6. **Podgląd pane'a w UI** (toggle "podgląd CLI"). `GET /api/pane` woła `tmux capture-pane -p -t <target>` (cache 500ms po stronie serwera) i zwraca aktualną zawartość pane'a jako tekst. Klient pinguje co 1.5s tylko na widoku "Najnowsze" i tylko gdy toggle jest włączony — pokazuje co Claude Code TUI ma teraz na ekranie (z input boxem włącznie). Drugie źródło prawdy obok JSONL: jak wysyłka mid-thinking siedzi jeszcze w bufferze TUI, tu ją zobaczysz.
 
-7. **Optymistyczne renderowanie własnych wysyłek + server-side kolejka + Esc.**
+7. **i18n (PL + EN).** Język UI wybierany przez `PANEL_LANG` (`pl` default, `en` opcjonalnie) przy boocie kontenera. Wszystkie user-facing stringi siedzą w `src/ui/i18n.js` (~80 kluczy: tabs, usage, search, send-form, statusy, toasty, empty-states, daty, plurale `plik/pliki/plików`, oraz CSS pseudo-elementy typu "▸ pokaż całość"). `index.js` czyta `LANG` z config raz przy pierwszym `require`, woła `pick(lang)` i wstrzykuje słownik trzema kanałami: server-side jako interpolacje w `styles(t)`/`body(t)`, oraz client-side jako `window.T = {...}` przed `<script>${client}</script>`. `client.js` używa `T.<key>` zamiast hardcoded stringów; helper `fileWord(n)` dobiera polskie 3-formy plurale (1 / 2-4 / 5+). Dodanie nowego języka = dopisać dict do `i18n.js` i rozszerzyć whitelist w `config.js` (`PANEL_LANG === "xx"`). Zmiana `PANEL_LANG` wymaga restartu kontenera (env load-once przy boocie); samo `node --watch` nie wystarczy.
+
+8. **Optymistyczne renderowanie własnych wysyłek + server-side kolejka + Esc.**
     - **Pending render.** Po `POST /api/send` klient od razu wstawia event do feedu z klasą `.pending` ("w kolejce…" / "wysyłam…" / "wysłane, czekam na claude…" w zależności od stanu z SSE). Gdy realny wpis pojawi się w JSONL, `reapPending` paruje po znormalizowanym tekście (prefix-matching dla payloadów ze ścieżką uploadu) i zdejmuje pending. Po 30s bez parowania pending dostaje klasę `.stuck` (czerwony "brak odpowiedzi z tmux") z lokalnym przyciskiem ×.
     - **Server-side queue (`queue.js`).** `POST /api/send` nie wysyła do tmuxa od razu — enqueue'uje w pamięci kontenera. Worker dyspatchuje **tylko gdy `detectStatus`(najnowsza sesja) === `idle`**: czeka aż Claude skończy bieżący turn, dopiero wtedy `sendText` na kolejnej pozycji + 300ms cooldown na flip statusu. Trigger workera: na enqueue, na każdym SSE ticku z fs.watch (= zmiana JSONL), oraz fallback timer 2 s. Skutek: wpisanie 3 wiadomości pod rząd podczas myślenia → 3 osobne tury Claude'a, nie jedno sklejone w bufferze TUI. Każda zmiana stanu (added/sending/sent/cancelled/error/cleared/dropped) leci jako SSE event `{type:"queue", event, queue:[...], id}`.
     - **Cancel.** `POST /api/queue/cancel?id=` zdejmuje z kolejki (zwraca 409 jak już `sending`). Klient pokazuje × na każdym pending z `_queueId`. Errored/stuck mają lokalny dismiss (`data-local-pid`).
@@ -96,7 +100,7 @@ claude-panel/
 
 ### HTTP API
 
-- `GET /` — SPA (HTML+CSS+JS inline w odpowiedzi, locale: pl).
+- `GET /` — SPA (HTML+CSS+JS inline w odpowiedzi). Locale wybierane przez `PANEL_LANG` (`pl`/`en`, default `pl`) — patrz §"i18n" niżej.
 - `GET /terminal[/...]` — proxy do ttyd (HTTP + upgrade do WS).
 - `GET /api/sessions` — lista wszystkich sesji (summary, sort po mtime desc).
 - `GET /api/session?id=<id>&project=<project>` — sparsowany transkrypt.
@@ -125,6 +129,7 @@ claude-panel/
 - **Brak auth.** `POST /api/send` napędzi dowolną sesję tmuxa w kontenerze. Nie eksponować portu 8080 poza localhost / VPN.
 - **Obraz odpala Claude Code z `--dangerously-skip-permissions`.** To celowe (panel sam moderuje), ale konsument obrazu musi to wiedzieć — całość runtime'u zakłada zaufaną sesję pod kontrolą operatora panelu.
 - **`claude-panel/Dockerfile` startuje `node --watch server.js`.** Edycje `server.js`/`src/**` auto-reload bez rebuildu — `compose.yml` montuje `./claude-panel` RW do `/srv`.
+- **`PANEL_LANG` jest load-once przy boocie.** `INDEX_HTML` jest cache'owane po pierwszym `require("./ui")`, więc zmiana env w czasie życia kontenera nie ma efektu — wymaga `docker compose up -d` (recreate). Pliki `i18n.js`/`styles.js`/`body.js` są fine na `--watch` restart.
 
 ## Release / CI (`.circleci/config.yml`)
 
@@ -155,6 +160,7 @@ services:
       TMUX_TARGET: cpa-tmux
       UPLOADS_DIR: /app/claude-panel/uploads
       UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
+      PANEL_LANG: pl   # lub "en"
     ports: ["8080:8080"]
     group_add: ["998"]
 ```
