@@ -7,7 +7,6 @@ services:
       - .:/app
       - ./claude:/home/node/.claude
       - ./claude.json:/home/node/.claude.json
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./claude-panel:/srv
     environment:
       CLAUDE_DIR: /home/node/.claude
@@ -19,8 +18,6 @@ services:
       PANEL_LANG: pl
     ports:
       - "8080:8080"
-    group_add:
-      - "998"
     stdin_open: true
     tty: true
     restart: unless-stopped

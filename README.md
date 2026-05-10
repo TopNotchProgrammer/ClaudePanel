@@ -13,25 +13,50 @@ Przeglądarkowy panel do **monitorowania i sterowania sesją [Claude Code](https
 ```yaml
 # compose.yml — w roocie repo, w którym chcesz uruchomić Claude Code
 services:
+  docker-proxy:
+    container_name: docker-proxy
+    image: wollomatic/socket-proxy:1
+    read_only: true
+    mem_limit: 64M
+    cap_drop:
+      - ALL
+    user: ":998" # gid grupy `docker` na hoście (`getent group docker | cut -d: -f3`)
+    security_opt:
+      - no-new-privileges
+    command:
+      - "-listenip=0.0.0.0"
+      - "-allowfrom=0.0.0.0/0"
+      - "-loglevel=info"
+      - '-allowGET=/v\d+\.\d+/(containers|exec)/.*'
+      - '-allowPOST=/v\d+\.\d+/containers/(container1|container2)/exec' # container1|container2 - zamien na liste kontenerow do ktorych claude ma miec dostep (exec)
+      - '-allowPOST=/v\d+\.\d+/exec/[a-f0-9]+/start'
+      - '-allowPOST=/v\d+\.\d+/exec/[a-f0-9]+/resize'
+      - "-allowhealthcheck"
+    healthcheck:
+      test: ["CMD", "./healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
   claude-panel:
+    DOCKER_HOST: tcp://docker-proxy:2375
     image: topnotchprogrammer/claude-panel:latest
     container_name: claude-panel
     pull_policy: always
     volumes:
-      - .:/app                                       # twój projekt — Claude może go czytać/edytować
-      - ./claude:/home/node/.claude                  # state Claude'a (sesje, OAuth) — przeżywa restart
-      - ./claude.json:/home/node/.claude.json        # ustawienia CLI
-      - /var/run/docker.sock:/var/run/docker.sock    # Claude może odpalać kontenery hosta (opcjonalne)
+      - .:/app # twój projekt — Claude może go czytać/edytować
+      - ./claude:/home/node/.claude # state Claude'a (sesje, OAuth) — przeżywa restart
+      - ./claude.json:/home/node/.claude.json # ustawienia CLI
     environment:
       CLAUDE_DIR: /home/node/.claude
       PORT: "8080"
       TMUX_SOCKET: /tmp/cpa-tmux/default
       TMUX_TARGET: cpa-tmux
-      PANEL_LANG: pl                                 # język UI: "pl" (default) lub "en"
+      PANEL_LANG: pl # język UI: "pl" (default) lub "en"
     ports:
-      - "8080:8080"                                  # ⚠️ patrz "Bezpieczeństwo" — bind do localhost jeśli host jest publiczny
-    group_add:
-      - "998"                                        # gid grupy `docker` na hoście (`getent group docker | cut -d: -f3`)
+      - "8080:8080" # ⚠️ patrz "Bezpieczeństwo" — bind do localhost jeśli host jest publiczny
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -47,19 +72,20 @@ Panel: <http://localhost:8080>. Pierwsze uruchomienie poprosi o zalogowanie do C
 
 ## Konfiguracja
 
-| Env                     | Default                        | Opis                                                                  |
-| ----------------------- | ------------------------------ | --------------------------------------------------------------------- |
-| `CLAUDE_DIR`            | `/home/node/.claude`           | gdzie panel czyta JSONL sesji + `.credentials.json`                   |
-| `PORT`                  | `8080`                         | port HTTP serwera panelu                                              |
-| `TMUX_SOCKET`           | `/tmp/cpa-tmux/default`        | socket tmuxa (panel woła `send-keys` po nim)                          |
-| `TMUX_TARGET`           | `cpa-tmux`                     | nazwa sesji tmuxa, do której wysyła `POST /api/send`                  |
-| `UPLOADS_DIR`           | `/tmp/claude-panel-uploads`    | gdzie panel zapisuje wgrane pliki                                     |
-| `UPLOADS_CLAUDE_PATH`   | = `UPLOADS_DIR`                | ścieżka, którą panel **wkleja w prompt** (musi być widoczna z Claude) |
-| `PANEL_LANG`            | `pl`                           | język UI: `pl` lub `en` (load-once przy boocie — wymaga recreate)     |
-| `CLAUDE_ARGS`           | `--dangerously-skip-permissions` | argumenty przekazane do `claude` przy starcie sesji                  |
-| `TTYD_PORT`             | `7681`                         | port ttyd (lokalnie, proxy przez `/terminal`)                         |
+| Env                   | Default                          | Opis                                                                  |
+| --------------------- | -------------------------------- | --------------------------------------------------------------------- |
+| `CLAUDE_DIR`          | `/home/node/.claude`             | gdzie panel czyta JSONL sesji + `.credentials.json`                   |
+| `PORT`                | `8080`                           | port HTTP serwera panelu                                              |
+| `TMUX_SOCKET`         | `/tmp/cpa-tmux/default`          | socket tmuxa (panel woła `send-keys` po nim)                          |
+| `TMUX_TARGET`         | `cpa-tmux`                       | nazwa sesji tmuxa, do której wysyła `POST /api/send`                  |
+| `UPLOADS_DIR`         | `/tmp/claude-panel-uploads`      | gdzie panel zapisuje wgrane pliki                                     |
+| `UPLOADS_CLAUDE_PATH` | = `UPLOADS_DIR`                  | ścieżka, którą panel **wkleja w prompt** (musi być widoczna z Claude) |
+| `PANEL_LANG`          | `pl`                             | język UI: `pl` lub `en` (load-once przy boocie — wymaga recreate)     |
+| `CLAUDE_ARGS`         | `--dangerously-skip-permissions` | argumenty przekazane do `claude` przy starcie sesji                   |
+| `TTYD_PORT`           | `7681`                           | port ttyd (lokalnie, proxy przez `/terminal`)                         |
 
 Porty:
+
 - `8080` — panel + proxy ttyd pod `/terminal` + WS pod `/api/stream`.
 
 ## Bezpieczeństwo
@@ -75,6 +101,7 @@ Porty:
 ## Architektura w skrócie
 
 Jeden kontener, w środku:
+
 - `tmux` z sesją `cpa-tmux` w której biega `claude` (CLI),
 - `ttyd` na `127.0.0.1:7681` przyklejony do tej sesji (proxy z panelu pod `/terminal`),
 - Node HTTP serwer z `node --watch` (panel + API + SSE + WS upgrade do ttyd).
