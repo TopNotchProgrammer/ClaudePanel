@@ -59,6 +59,9 @@ infoToggle.addEventListener('click',()=>{
 document.getElementById('reload-toggle').addEventListener('click',()=>{
   location.reload();
 });
+document.getElementById('tab-swap').addEventListener('click',()=>{
+  tabsWrap.classList.toggle('show-util');
+});
 document.getElementById('terminal-toggle').addEventListener('click',()=>{
   window.open('/terminal/', '_blank', 'noopener');
 });
@@ -546,7 +549,7 @@ paneToggle.addEventListener('click', ()=>{
 });
 
 function setViewTab(view){
-  [...tabsWrap.querySelectorAll('.tab')].forEach(t=>{
+  [...tabsWrap.querySelectorAll('.tab[data-view]')].forEach(t=>{
     t.classList.toggle('active', t.dataset.view===view);
   });
 }
@@ -1386,4 +1389,55 @@ async function fetchUsage(){
     setInterval(fetchUsage, USAGE_TTL_MS);
   }
 })();
+
+// --- /goal ---
+const nudgeToggle = document.getElementById('nudge-toggle');
+const nudgeModal = document.getElementById('nudge-modal');
+const nudgePromptEl = document.getElementById('nudge-prompt');
+const nudgeStartBtn = document.getElementById('nudge-start-btn');
+const nudgeStopBtn = document.getElementById('nudge-stop-btn');
+const nudgeCloseBtn = document.getElementById('nudge-close-btn');
+
+let nudgeActive = false;
+
+function updateGoalUI(st){
+  nudgeActive = st.active;
+  nudgeToggle.classList.toggle('active', nudgeActive);
+  nudgeStartBtn.style.display = nudgeActive ? 'none' : '';
+  nudgeStopBtn.style.display = nudgeActive ? '' : 'none';
+  if(st.condition) nudgePromptEl.value = st.condition;
+}
+
+function openNudgeModal(){
+  nudgeModal.style.display = 'flex';
+  fetch('/api/goal').then(r=>r.json()).then(updateGoalUI).catch(()=>{});
+}
+function closeNudgeModal(){
+  nudgeModal.style.display = 'none';
+}
+
+nudgeToggle.addEventListener('click', openNudgeModal);
+nudgeCloseBtn.addEventListener('click', closeNudgeModal);
+nudgeModal.addEventListener('click', (e)=>{
+  if(e.target === nudgeModal) closeNudgeModal();
+});
+
+nudgeStartBtn.addEventListener('click', ()=>{
+  const condition = nudgePromptEl.value.trim();
+  if(!condition){ showToast(T.goalEmpty, 'err'); return; }
+  fetch('/api/goal', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({condition})})
+    .then(r=>r.json()).then(st=>{
+      if(st.error){ showToast(T.errPrefix+st.error, 'err'); return; }
+      updateGoalUI(st); showToast(T.goalActive, 'ok');
+    })
+    .catch(e=>showToast(T.errPrefix+e.message, 'err'));
+});
+
+nudgeStopBtn.addEventListener('click', ()=>{
+  fetch('/api/goal', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'stop'})})
+    .then(r=>r.json()).then(st=>{ updateGoalUI(st); showToast(T.goalInactive, 'ok'); })
+    .catch(e=>showToast(T.errPrefix+e.message, 'err'));
+});
+
+fetch('/api/goal').then(r=>r.json()).then(st=>{ nudgeToggle.classList.toggle('active', st.active); nudgeActive = st.active; }).catch(()=>{});
 `;

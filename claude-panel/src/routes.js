@@ -17,6 +17,7 @@ const btwMod = require("./btw");
 btwMod.setBroadcaster(sseBroadcast);
 const { proxyHttp } = require("./proxy");
 const { fetchUsage } = require("./usage");
+const goalMod = require("./nudge");
 const INDEX_HTML = require("./ui");
 
 function json(res, status, body) {
@@ -235,6 +236,28 @@ function handle(req, res) {
       capturePane(socket, target)
         .then(text => json(res, 200, { ok: true, text }))
         .catch(e => json(res, 500, { ok: false, error: e.message }));
+      return;
+    }
+    if (pathname === "/api/goal" && req.method === "GET") {
+      return json(res, 200, goalMod.status());
+    }
+    if (pathname === "/api/goal" && req.method === "POST") {
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", () => {
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+        catch { return json(res, 400, { error: "bad json" }); }
+        if (body.action === "stop") {
+          return json(res, 200, goalMod.stop());
+        }
+        try {
+          const result = goalMod.start({ condition: body.condition });
+          return json(res, 200, result);
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      });
       return;
     }
     if (pathname === "/api/send-config") {

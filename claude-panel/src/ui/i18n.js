@@ -99,6 +99,16 @@ const pl = {
   collapse: "zwiń",
   charsSuffix: "znaków",
   dropFile: "upuść plik",
+
+  goalTitle: "/goal",
+  goalCondition: "Warunek zakończenia",
+  goalStart: "Uruchom",
+  goalStop: "Zatrzymaj",
+  goalActive: "/goal aktywny",
+  goalInactive: "/goal zatrzymany",
+  goalTooltip: "/goal",
+  goalDefaultCondition: "all tasks from the plan are completed, tests pass, and there are no remaining TODOs",
+  goalEmpty: "wpisz warunek",
 };
 
 const en = {
@@ -202,6 +212,16 @@ const en = {
   collapse: "collapse",
   charsSuffix: "chars",
   dropFile: "drop file",
+
+  goalTitle: "/goal",
+  goalCondition: "Completion condition",
+  goalStart: "Start",
+  goalStop: "Stop",
+  goalActive: "/goal active",
+  goalInactive: "/goal stopped",
+  goalTooltip: "/goal",
+  goalDefaultCondition: "all tasks from the plan are completed, tests pass, and there are no remaining TODOs",
+  goalEmpty: "enter a condition",
 };
 
 function pick(lang) {

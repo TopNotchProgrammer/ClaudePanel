@@ -10,6 +10,7 @@ services:
       - ./claude-panel:/srv
     environment:
       CLAUDE_DIR: /home/node/.claude
+      ANTHROPIC_MODEL: "claude-opus-4-6[1m]"
       PORT: "8080"
       TMUX_SOCKET: /tmp/cpa-tmux/default
       TMUX_TARGET: cpa-tmux

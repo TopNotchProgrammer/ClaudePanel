@@ -10,30 +10,41 @@ module.exports = (t) => `
     <span id="counter" class="pill"></span>
   </div>
   <div id="tabs-wrap" class="tabs">
-    <button class="tab tab-icon active" data-view="latest" aria-label="${t.tabLatest}" title="${t.tabLatest}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15.5 13.5"/></svg>
-    </button>
-    <button class="tab tab-icon" id="terminal-toggle" type="button" aria-label="${t.tabTerminal}" title="${t.tabTerminal}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 9 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>
-    </button>
-    <button class="tab tab-icon" data-view="sessions" aria-label="${t.tabSessions}" title="${t.tabSessions}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    </button>
-    <button class="tab tab-icon" data-view="commands" aria-label="${t.tabCommands}" title="${t.tabCommands}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-    </button>
+    <div class="tab-group tab-group-nav">
+      <button class="tab tab-icon active" data-view="latest" aria-label="${t.tabLatest}" title="${t.tabLatest}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15.5 13.5"/></svg>
+      </button>
+      <button class="tab tab-icon" id="terminal-toggle" type="button" aria-label="${t.tabTerminal}" title="${t.tabTerminal}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6 9 9 12 6 15"/><line x1="12" y1="15" x2="16" y2="15"/></svg>
+      </button>
+      <button class="tab tab-icon" id="reload-toggle" type="button" aria-label="${t.tabReload}" title="${t.tabReload}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      </button>
+      <button class="tab tab-icon" id="nudge-toggle" type="button" aria-label="${t.goalTooltip}" title="${t.goalTooltip}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>
+      </button>
+    </div>
     <span class="tab-spacer"></span>
-    <button class="tab tab-icon" id="info-toggle" type="button" aria-label="${t.tabInfo}" style="display:none">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><circle cx="12" cy="8" r=".6" fill="currentColor"/></svg>
-    </button>
-    <button class="tab tab-icon" id="pane-toggle" type="button" aria-label="${t.tabPanePreview}" title="${t.tabPanePreview}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-    </button>
-    <button class="tab tab-icon" id="reload-toggle" type="button" aria-label="${t.tabReload}" title="${t.tabReload}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-    </button>
-    <button class="tab tab-icon" id="search-toggle" type="button" aria-label="${t.tabSearch}">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <div class="tab-group tab-group-util">
+      <button class="tab tab-icon" data-view="sessions" aria-label="${t.tabSessions}" title="${t.tabSessions}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </button>
+      <button class="tab tab-icon" data-view="commands" aria-label="${t.tabCommands}" title="${t.tabCommands}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      </button>
+      <button class="tab tab-icon" id="info-toggle" type="button" aria-label="${t.tabInfo}" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><circle cx="12" cy="8" r=".6" fill="currentColor"/></svg>
+      </button>
+      <button class="tab tab-icon" id="pane-toggle" type="button" aria-label="${t.tabPanePreview}" title="${t.tabPanePreview}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="tab tab-icon" id="search-toggle" type="button" aria-label="${t.tabSearch}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+    </div>
+    <button class="tab tab-icon tab-swap" id="tab-swap" type="button" aria-label="more">
+      <svg class="swap-down" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 8 12 13 17 8"/><polyline points="7 15 12 20 17 15"/></svg>
+      <svg class="swap-up" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 16 12 11 17 16"/><polyline points="7 9 12 4 17 9"/></svg>
     </button>
   </div>
   <div id="usage-strip" class="usage-strip" style="display:none">
@@ -83,4 +94,17 @@ module.exports = (t) => `
     </div>
   </div>
 </form>
+<div id="nudge-modal" class="nudge-modal" style="display:none">
+  <div class="nudge-modal-content">
+    <h3>${t.goalTitle}</h3>
+    <label class="nudge-label">${t.goalCondition}
+      <textarea id="nudge-prompt" rows="3">${t.goalDefaultCondition}</textarea>
+    </label>
+    <div class="nudge-actions">
+      <button id="nudge-start-btn" class="btn nudge-start" type="button">${t.goalStart}</button>
+      <button id="nudge-stop-btn" class="btn nudge-stop" type="button" style="display:none">${t.goalStop}</button>
+      <button id="nudge-close-btn" class="btn" type="button">${t.closeBtn}</button>
+    </div>
+  </div>
+</div>
 `;
