@@ -8,6 +8,7 @@ services:
       - ./claude:/home/node/.claude
       - ./claude.json:/home/node/.claude.json
       - ./claude-panel:/srv
+      - ./models:/opt/models
     environment:
       CLAUDE_DIR: /home/node/.claude
       ANTHROPIC_MODEL: "claude-opus-4-6[1m]"
@@ -17,8 +18,21 @@ services:
       UPLOADS_DIR: /app/claude-panel/uploads
       UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
       PANEL_LANG: pl
+      ASR_URL: "http://127.0.0.1:8000"
+      MODELS_DIR: /opt/models
+      WHISPER_MODEL: large-v3
+      WHISPER_DEVICE: cuda
+      WHISPER_COMPUTE: float16
+      TTS_REF_WAV: /srv/asr/ref_voice.wav
     ports:
       - "8080:8080"
     stdin_open: true
     tty: true
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

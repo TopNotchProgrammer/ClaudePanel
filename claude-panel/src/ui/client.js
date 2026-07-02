@@ -1171,6 +1171,7 @@ async function pollLatest(){
         state.lastRenderedMaxIndex=null;
       }
       f.maxIndex=Math.max.apply(null,fresh.map(e=>e._i));
+      ttsHandleFresh(fresh);
       renderLatest({mode:'newer'});
     } else if(f.events.some(e=>e._pending && (Date.now()-(e._pendingAt||0))>5000)){
       // No new server events but stale pending exist — re-render to refresh stuck markers.
@@ -1440,4 +1441,208 @@ nudgeStopBtn.addEventListener('click', ()=>{
 });
 
 fetch('/api/goal').then(r=>r.json()).then(st=>{ nudgeToggle.classList.toggle('active', st.active); nudgeActive = st.active; }).catch(()=>{});
+
+// --- Microphone / ASR with VAD ---
+var micBtn = document.getElementById('mic-btn');
+var _micStream = null;
+var _micCtx = null;
+var _micAnalyser = null;
+var _micRecorder = null;
+var _micChunks = [];
+var _micRecording = false;
+var _micInflight = 0;
+var VAD_SILENCE_MS = 800;
+var VAD_THRESHOLD = 0.015;
+var _vadSilenceStart = 0;
+var _vadRafId = null;
+var _vadHasVoice = false;
+var _micAutoSendMs = 5000;
+var _micAutoSendTimer = null;
+
+(function checkAsr(){
+  var tries = 0;
+  function check(){
+    fetch('/api/asr/health').then(function(r){ return r.json(); }).then(function(d){
+      if(d && d.ok) micBtn.classList.add('available');
+      else if(tries < 6){ tries++; setTimeout(check, 5000); }
+    }).catch(function(){ if(tries < 6){ tries++; setTimeout(check, 5000); } });
+  }
+  check();
+})();
+
+function _vadFlush(){
+  if(!_micRecorder || _micRecorder.state !== 'recording' || !_vadHasVoice) return;
+  _micRecorder.stop();
+}
+
+function _vadLoop(){
+  if(!_micRecording){ return; }
+  var buf = new Float32Array(_micAnalyser.fftSize);
+  _micAnalyser.getFloatTimeDomainData(buf);
+  var rms = 0;
+  for(var i=0;i<buf.length;i++) rms += buf[i]*buf[i];
+  rms = Math.sqrt(rms / buf.length);
+
+  var now = performance.now();
+  if(rms > VAD_THRESHOLD){
+    _vadSilenceStart = 0;
+    _vadHasVoice = true;
+  } else if(_vadHasVoice && _vadSilenceStart === 0){
+    _vadSilenceStart = now;
+  }
+
+  if(_vadHasVoice && _vadSilenceStart > 0 && (now - _vadSilenceStart) >= VAD_SILENCE_MS){
+    _vadFlush();
+  }
+
+  _vadRafId = requestAnimationFrame(_vadLoop);
+}
+
+function _startNewRecorder(){
+  if(!_micStream || !_micRecording) return;
+  var mimeType = 'audio/webm;codecs=opus';
+  if(typeof MediaRecorder.isTypeSupported === 'function' && !MediaRecorder.isTypeSupported(mimeType)){
+    mimeType = 'audio/webm';
+    if(!MediaRecorder.isTypeSupported(mimeType)) mimeType = '';
+  }
+  var opts = mimeType ? {mimeType: mimeType} : {};
+  _micRecorder = new MediaRecorder(_micStream, opts);
+  _micChunks = [];
+  _vadHasVoice = false;
+  _vadSilenceStart = 0;
+  _micRecorder.ondataavailable = function(e){ if(e.data.size > 0) _micChunks.push(e.data); };
+  _micRecorder.onstop = function(){
+    var chunks = _micChunks;
+    _micChunks = [];
+    if(_micRecording) _startNewRecorder();
+
+    if(!chunks.length) return;
+    var recordedType = (_micRecorder && _micRecorder.mimeType) || 'audio/webm';
+    var blob = new Blob(chunks, {type: recordedType});
+    if(blob.size < 500) return;
+
+    _micInflight++;
+    micBtn.classList.add('transcribing');
+    fetch('/api/asr?lang='+(T.locale||'pl'), {method:'POST', headers:{'Content-Type': recordedType}, body: blob})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d && d.text){
+          var cur = sendText.value;
+          sendText.value = (cur ? cur + ' ' : '') + d.text;
+          sendText.dispatchEvent(new Event('input'));
+          sendText.focus();
+          _micResetAutoSend();
+        }
+      })
+      .catch(function(){})
+      .then(function(){
+        _micInflight--;
+        if(_micInflight <= 0){ _micInflight = 0; micBtn.classList.remove('transcribing'); }
+      });
+  };
+  _micRecorder.start();
+}
+
+function _micResetAutoSend(){
+  if(_micAutoSendTimer) clearTimeout(_micAutoSendTimer);
+  if(!_micRecording) return;
+  _micAutoSendTimer = setTimeout(function(){
+    if(!_micRecording) return;
+    if(sendText.value.trim()){
+      enqueueMessage();
+    }
+  }, _micAutoSendMs);
+}
+
+function _micStop(){
+  _micRecording = false;
+  _ttsStop();
+  if(_micAutoSendTimer){ clearTimeout(_micAutoSendTimer); _micAutoSendTimer = null; }
+  if(_vadRafId){ cancelAnimationFrame(_vadRafId); _vadRafId = null; }
+  if(_micRecorder && _micRecorder.state === 'recording'){
+    _vadHasVoice = true;
+    _micRecorder.stop();
+  }
+  if(_micStream){ _micStream.getTracks().forEach(function(t){ t.stop(); }); _micStream = null; }
+  if(_micCtx){ _micCtx.close().catch(function(){}); _micCtx = null; }
+  micBtn.classList.remove('recording');
+  micBtn.title = T.micRecord;
+}
+
+micBtn.addEventListener('click', function(){
+  if(_micRecording){ _micStop(); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showToast(T.micPermissionDenied, 'err');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    _micStream = stream;
+    _micCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var source = _micCtx.createMediaStreamSource(stream);
+    _micAnalyser = _micCtx.createAnalyser();
+    _micAnalyser.fftSize = 2048;
+    source.connect(_micAnalyser);
+
+    _micRecording = true;
+    micBtn.classList.add('recording');
+    micBtn.title = T.micStop;
+    _startNewRecorder();
+    _vadLoop();
+  }).catch(function(){
+    showToast(T.micPermissionDenied, 'err');
+  });
+});
+
+// --- TTS (read assistant responses aloud while mic is active) ---
+var _ttsQueue = [];
+var _ttsPlaying = false;
+var _ttsSpokenIndexes = {};
+var _ttsCurrentAudio = null;
+
+function _ttsEnqueue(text){
+  if(!text || !text.trim()) return;
+  _ttsQueue.push(text.trim());
+  _ttsProcess();
+}
+
+function _ttsStop(){
+  _ttsQueue = [];
+  _ttsPlaying = false;
+  if(_ttsCurrentAudio){
+    _ttsCurrentAudio.pause();
+    _ttsCurrentAudio = null;
+  }
+}
+
+function _ttsProcess(){
+  if(_ttsPlaying || !_ttsQueue.length) return;
+  var text = _ttsQueue.shift();
+  _ttsPlaying = true;
+  fetch('/api/tts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: text})})
+    .then(function(r){
+      if(!r.ok) throw new Error('TTS '+r.status);
+      return r.arrayBuffer();
+    })
+    .then(function(buf){
+      var blob = new Blob([buf], {type:'audio/wav'});
+      var url = URL.createObjectURL(blob);
+      var audio = new Audio(url);
+      _ttsCurrentAudio = audio;
+      audio.onended = function(){ URL.revokeObjectURL(url); _ttsCurrentAudio = null; _ttsPlaying = false; _ttsProcess(); };
+      audio.onerror = function(){ URL.revokeObjectURL(url); _ttsCurrentAudio = null; _ttsPlaying = false; _ttsProcess(); };
+      audio.play().catch(function(){ _ttsCurrentAudio = null; _ttsPlaying = false; _ttsProcess(); });
+    })
+    .catch(function(){ _ttsPlaying = false; _ttsProcess(); });
+}
+
+function ttsHandleFresh(fresh){
+  if(!_micRecording) return;
+  for(var i=0; i<fresh.length; i++){
+    var e = fresh[i];
+    if(e.kind === 'assistant' && e.text && !_ttsSpokenIndexes[e._i]){
+      _ttsSpokenIndexes[e._i] = true;
+      _ttsEnqueue(e.text);
+    }
+  }
+}
 `;

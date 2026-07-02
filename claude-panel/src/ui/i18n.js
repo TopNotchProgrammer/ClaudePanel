@@ -32,6 +32,10 @@ const pl = {
   filterThinking: "myślenie",
 
   attachFile: "załącz plik",
+  micRecord: "dyktuj",
+  micStop: "zatrzymaj nagrywanie",
+  micTranscribing: "transkrybuję…",
+  micPermissionDenied: "brak dostępu do mikrofonu",
   interruptClaude: "przerwij claude",
   sendBtn: "wyślij",
   removeBtn: "usuń",
@@ -145,6 +149,10 @@ const en = {
   filterThinking: "thinking",
 
   attachFile: "attach file",
+  micRecord: "dictate",
+  micStop: "stop recording",
+  micTranscribing: "transcribing…",
+  micPermissionDenied: "microphone access denied",
   interruptClaude: "interrupt claude",
   sendBtn: "send",
   removeBtn: "remove",

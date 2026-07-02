@@ -70,6 +70,11 @@ input[type=search]:focus{border-color:var(--accent)}
 .pending-cancel:hover{background:var(--panel2);color:var(--err)}
 .pending-retry{background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 8px;border-radius:4px}
 .pending-retry:hover{background:var(--panel2);color:var(--accent)}
+.mic-btn{display:none}
+.mic-btn.available{display:flex}
+.mic-btn.recording{color:#fff !important;background:var(--err) !important;border-color:var(--err) !important;animation:mic-pulse 1s infinite}
+.mic-btn.transcribing{opacity:.5;cursor:wait;pointer-events:none}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,123,114,.4)}50%{box-shadow:0 0 0 8px rgba(255,123,114,0)}}
 .send-form .icon-btn.interrupt-btn:not(:disabled){color:var(--err);border-color:var(--err)}
 .send-form .icon-btn.interrupt-btn:not(:disabled):hover{background:var(--err);color:#fff}
 .send-form .icon-btn.interrupt-btn:disabled{opacity:.35;cursor:not-allowed}

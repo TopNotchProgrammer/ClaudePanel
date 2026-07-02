@@ -18,6 +18,8 @@ btwMod.setBroadcaster(sseBroadcast);
 const { proxyHttp } = require("./proxy");
 const { fetchUsage } = require("./usage");
 const goalMod = require("./nudge");
+const asrMod = require("./asr");
+const ttsMod = require("./tts");
 const INDEX_HTML = require("./ui");
 
 function json(res, status, body) {
@@ -257,6 +259,57 @@ function handle(req, res) {
         } catch (e) {
           return json(res, 400, { error: e.message });
         }
+      });
+      return;
+    }
+    if (pathname === "/api/asr/health") {
+      asrMod.checkHealth()
+        .then(h => json(res, 200, h))
+        .catch(() => json(res, 200, { ok: false }));
+      return;
+    }
+    if (pathname === "/api/asr" && req.method === "POST") {
+      const chunks = [];
+      let total = 0;
+      let aborted = false;
+      req.on("data", c => {
+        total += c.length;
+        if (total > 10 * 1024 * 1024) { aborted = true; req.destroy(); return; }
+        chunks.push(c);
+      });
+      req.on("end", () => {
+        if (aborted) return json(res, 413, { ok: false, error: "too large" });
+        const audio = Buffer.concat(chunks);
+        const mimeType = (req.headers["content-type"] || "audio/webm").split(";")[0].trim();
+        const lang = parsed.query.lang || "pl";
+        asrMod.transcribe(audio, mimeType, lang)
+          .then(r => json(res, 200, r))
+          .catch(e => json(res, 500, { ok: false, error: e.message }));
+      });
+      return;
+    }
+    if (pathname === "/api/tts" && req.method === "POST") {
+      const chunks = [];
+      let total = 0;
+      let aborted = false;
+      req.on("data", c => {
+        total += c.length;
+        if (total > 100000) { aborted = true; req.destroy(); return; }
+        chunks.push(c);
+      });
+      req.on("end", () => {
+        if (aborted) return json(res, 413, { ok: false, error: "too large" });
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          const text = (body.text || "").slice(0, 5000);
+          if (!text) return json(res, 400, { ok: false, error: "empty text" });
+          ttsMod.synthesize(text)
+            .then(wav => {
+              res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": wav.length });
+              res.end(wav);
+            })
+            .catch(e => json(res, 500, { ok: false, error: e.message }));
+        } catch { return json(res, 400, { ok: false, error: "invalid json" }); }
       });
       return;
     }

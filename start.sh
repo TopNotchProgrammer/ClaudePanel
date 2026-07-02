@@ -6,6 +6,6 @@ touch claude.json
 mkdir -p claude
 docker compose up -d --build
 sleep 2
-clear
+#clear
 
 docker exec -it claude-panel cpa-attach
