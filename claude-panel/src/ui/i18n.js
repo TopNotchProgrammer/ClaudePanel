@@ -113,6 +113,12 @@ const pl = {
   goalTooltip: "/goal",
   goalDefaultCondition: "all tasks from the plan are completed, tests pass, and there are no remaining TODOs",
   goalEmpty: "wpisz warunek",
+
+  modelTooltip: "model",
+  modelLoading: "ładowanie…",
+  modelError: "błąd zmiany modelu",
+  modelRestarting: "restartuję claude…",
+  modelCurrent: "aktualny",
 };
 
 const en = {
@@ -230,6 +236,12 @@ const en = {
   goalTooltip: "/goal",
   goalDefaultCondition: "all tasks from the plan are completed, tests pass, and there are no remaining TODOs",
   goalEmpty: "enter a condition",
+
+  modelTooltip: "model",
+  modelLoading: "loading…",
+  modelError: "model change error",
+  modelRestarting: "restarting claude…",
+  modelCurrent: "current",
 };
 
 function pick(lang) {

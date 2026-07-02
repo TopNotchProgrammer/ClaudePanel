@@ -11,6 +11,9 @@ module.exports = (t) => `
   </div>
   <div id="tabs-wrap" class="tabs">
     <div class="tab-group tab-group-nav">
+      <button class="tab tab-icon" id="model-toggle" type="button" aria-label="${t.modelTooltip}" title="${t.modelTooltip}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </button>
       <button class="tab tab-icon active" data-view="latest" aria-label="${t.tabLatest}" title="${t.tabLatest}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15.5 13.5"/></svg>
       </button>
@@ -113,5 +116,8 @@ module.exports = (t) => `
       <button id="nudge-close-btn" class="btn" type="button">${t.closeBtn}</button>
     </div>
   </div>
+</div>
+<div id="model-dropdown" class="model-dropdown" style="display:none">
+  <div id="model-list" class="model-list"></div>
 </div>
 `;

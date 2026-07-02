@@ -66,6 +66,81 @@ document.getElementById('terminal-toggle').addEventListener('click',()=>{
   window.open('/terminal/', '_blank', 'noopener');
 });
 
+// --- Model selector ---
+var modelToggle = document.getElementById('model-toggle');
+var modelDropdown = document.getElementById('model-dropdown');
+var modelList = document.getElementById('model-list');
+var _modelCurrent = null;
+var _modelOpen = false;
+
+function modelClose(){
+  _modelOpen = false;
+  modelDropdown.style.display = 'none';
+  modelToggle.classList.remove('active');
+}
+
+function modelRender(models, current){
+  _modelCurrent = current;
+  var aliases = models.filter(function(m){ return m.id.indexOf('claude-') !== 0; });
+  var specific = models.filter(function(m){ return m.id.indexOf('claude-') === 0; });
+  var html = '';
+  aliases.forEach(function(m){
+    var isCurrent = current && (current === m.id || current.indexOf(m.id) !== -1);
+    html += '<button class="model-item" data-model="' + m.id + '">'
+      + '<span class="model-name">' + m.label + '</span>'
+      + (isCurrent ? '<span class="model-badge">' + T.modelCurrent + '</span>' : '')
+      + '</button>';
+  });
+  if (specific.length) {
+    html += '<div class="model-sep"></div>';
+    specific.forEach(function(m){
+      var isCurrent = current === m.id;
+      html += '<button class="model-item" data-model="' + m.id + '">'
+        + '<span class="model-name">' + m.label + '</span>'
+        + (isCurrent ? '<span class="model-badge">' + T.modelCurrent + '</span>' : '')
+        + '</button>';
+    });
+  }
+  modelList.innerHTML = html;
+}
+
+function modelFetch(){
+  fetch('/api/model').then(function(r){ return r.json(); }).then(function(d){
+    if(d && d.ok) modelRender(d.models, d.current);
+  }).catch(function(){});
+}
+
+modelToggle.addEventListener('click', function(e){
+  e.stopPropagation();
+  if(_modelOpen){ modelClose(); return; }
+  _modelOpen = true;
+  modelToggle.classList.add('active');
+  modelFetch();
+  var rect = modelToggle.getBoundingClientRect();
+  modelDropdown.style.display = '';
+  modelDropdown.style.top = (rect.bottom + 4) + 'px';
+  modelDropdown.style.left = Math.max(4, rect.left) + 'px';
+});
+
+modelList.addEventListener('click', function(e){
+  var btn = e.target.closest('.model-item');
+  if(!btn) return;
+  var id = btn.getAttribute('data-model');
+  if(!id) return;
+  modelClose();
+  showToast(T.modelRestarting, 'ok');
+  fetch('/api/model', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:id})})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d || !d.ok){ showToast(T.modelError, 'err'); return; }
+    })
+    .catch(function(){ showToast(T.modelError, 'err'); });
+});
+
+document.addEventListener('click', function(e){
+  if(_modelOpen && !modelDropdown.contains(e.target) && e.target !== modelToggle) modelClose();
+});
+
 function showToast(msg, kind){
   sendStatusEl.textContent = msg;
   sendStatusEl.className = 'pill ' + (kind==='ok' ? 'send-ok' : kind==='err' ? 'send-err' : '');

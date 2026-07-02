@@ -20,6 +20,7 @@ const { fetchUsage } = require("./usage");
 const goalMod = require("./nudge");
 const asrMod = require("./asr");
 const ttsMod = require("./tts");
+const modelMod = require("./model");
 const INDEX_HTML = require("./ui");
 
 function json(res, status, body) {
@@ -310,6 +311,28 @@ function handle(req, res) {
             })
             .catch(e => json(res, 500, { ok: false, error: e.message }));
         } catch { return json(res, 400, { ok: false, error: "invalid json" }); }
+      });
+      return;
+    }
+    if (pathname === "/api/model" && req.method === "GET") {
+      const current = modelMod.getCurrentModel();
+      return json(res, 200, { ok: true, current, models: modelMod.MODELS });
+    }
+    if (pathname === "/api/model" && req.method === "POST") {
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", () => {
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+        catch { return json(res, 400, { error: "bad json" }); }
+        const modelId = String(body.model || "").trim();
+        if (!modelId) return json(res, 400, { error: "missing model" });
+        const socket = process.env.TMUX_SOCKET || "/host-tmux/default";
+        const target = process.env.TMUX_TARGET || "";
+        if (!target) return json(res, 500, { error: "TMUX_TARGET not set" });
+        modelMod.switchModel(modelId, socket, target)
+          .then(() => json(res, 200, { ok: true }))
+          .catch(e => json(res, 500, { error: e.message }));
       });
       return;
     }
