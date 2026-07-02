@@ -117,10 +117,12 @@ a.cmd:hover{border-color:var(--accent);text-decoration:none}
 .event.focus{box-shadow:0 0 0 2px var(--accent);scroll-margin-top:180px}
 .send-form{flex:0 0 auto;z-index:5;background:var(--bg);border-top:1px solid var(--border);padding:10px 12px calc(10px + env(safe-area-inset-bottom)) 12px;display:flex;gap:8px;align-items:flex-end;position:relative}
 .send-form .send-inner{display:flex;flex-direction:column;gap:6px;width:100%;max-width:860px;margin:0 auto}
-.send-form .send-row{display:flex;gap:8px;align-items:flex-end;width:100%}
-.send-form textarea{flex:1;resize:none;height:40px;min-height:40px;max-height:140px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font:inherit;line-height:22px;outline:none;overflow-y:hidden}
+.send-form .send-row{display:flex;gap:8px;align-items:stretch;width:100%}
+.send-form textarea{flex:1;resize:none;min-height:0;height:auto;max-height:140px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font:inherit;line-height:22px;outline:none;overflow-y:hidden}
 .send-form textarea:focus{border-color:var(--accent)}
-.send-form button.submit{background:var(--accent);color:#001229;border:0;border-radius:8px;padding:0 16px;font:inherit;font-weight:600;cursor:pointer;height:40px}
+.send-form .send-side{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.send-form .send-toolbar{display:flex;gap:6px;align-items:center}
+.send-form button.submit{background:var(--accent);color:#001229;border:0;border-radius:8px;padding:0 8px;font:inherit;font-weight:600;cursor:pointer;height:40px;display:flex;align-items:center;justify-content:center;width:100%}
 .send-form button:disabled{opacity:.5;cursor:not-allowed}
 .send-form .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
 .send-form .icon-btn:hover{border-color:var(--accent);color:var(--accent)}
@@ -189,7 +191,7 @@ header h1{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white
 .usage-pct{font-weight:600;color:var(--text);min-width:32px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
 .usage-reset{flex-shrink:0;font-size:10px;white-space:nowrap}
 .usage-strip.error .usage-pct,.usage-strip.error .usage-reset{color:var(--err)}
-@media (max-width:600px){.usage-strip{gap:6px;flex-wrap:nowrap}.usage-row{flex:1 1 0;min-width:0}.usage-label{width:auto}.usage-reset{display:none}}
+@media (max-width:600px){.usage-strip{gap:6px;flex-wrap:nowrap}.usage-row{flex:1 1 0;min-width:0}.usage-label{width:auto}.usage-reset{display:none}.send-form .send-toolbar .icon-btn{width:34px;height:34px}.send-form .send-toolbar .icon-btn svg{width:16px;height:16px}}
 .pane-preview{flex:0 0 auto;background:#000;border-top:1px solid var(--border);border-bottom:1px solid var(--border);max-height:180px;overflow-y:auto;display:flex;flex-direction:column-reverse}
 .pane-preview pre{margin:0;padding:8px 12px;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cdd9e5;white-space:pre;overflow-x:auto}
 .pane-preview.err pre{color:var(--err)}
