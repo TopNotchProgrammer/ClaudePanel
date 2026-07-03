@@ -108,6 +108,11 @@ function handle(req, res) {
           meta,
           status,
         });
+      }).catch(err => {
+        // The newest session file can be deleted/rotated between listSessions()
+        // and parseSession() — surface it as a 500 instead of an unhandled
+        // rejection that would take the whole process down.
+        try { json(res, 500, { error: err.message }); } catch {}
       });
       return;
     }
@@ -304,7 +309,8 @@ function handle(req, res) {
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
           const text = (body.text || "").slice(0, 5000);
           if (!text) return json(res, 400, { ok: false, error: "empty text" });
-          ttsMod.synthesize(text)
+          const lang = parsed.query.lang || "pl";
+          ttsMod.synthesize(text, lang)
             .then(wav => {
               res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": wav.length });
               res.end(wav);

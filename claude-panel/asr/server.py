@@ -81,14 +81,14 @@ async def transcribe(
 
 
 @app.post("/tts")
-async def tts(text: str = Form(...)):
+async def tts(text: str = Form(...), language: str = Form("pl")):
     if not _tts:
         raise HTTPException(503, "TTS not loaded")
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         path = f.name
     try:
         _tts.tts_to_file(
-            text, file_path=path, language="pl",
+            text, file_path=path, language=language,
             speaker_wav=_tts_ref_wav,
         )
         buf = io.BytesIO(open(path, "rb").read())

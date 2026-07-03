@@ -49,12 +49,16 @@ Env panelu (z `compose.yml`):
 - `UPLOADS_DIR=/app/claude-panel/uploads` (gdzie panel zapisuje pliki z `POST /api/send`)
 - `UPLOADS_CLAUDE_PATH=/app/claude-panel/uploads` (ścieżkę pod tym kluczem panel **wkleja w prompt** — bo Claude w tym samym kontenerze widzi tę samą ścieżkę)
 - `PANEL_LANG=pl` (język UI: `pl` lub `en`, domyślnie `pl`. Ustawiane przy boocie kontenera; stringi wstrzykiwane jako `window.T` do klienta przez `src/ui/i18n.js`)
+- `ANTHROPIC_MODEL` (domyślny model, którym startuje Claude Code; czytany też przez `src/model.js` do listy przełączania)
+- `ASR_URL=http://127.0.0.1:8000` (adres sidecara ASR/TTS; używany przez `src/asr.js` i `src/tts.js`)
+- `MODELS_DIR`, `WHISPER_MODEL=large-v3`, `TTS_REF_WAV=/srv/asr/ref_voice.wav` (konfiguracja sidecara `asr/server.py`: katalog modeli, model Whisper, referencyjny głos dla XTTS)
+- `TLS_KEY=/tmp/cpa-tls/key.pem`, `TLS_CERT=/tmp/cpa-tls/cert.pem` (opcjonalne; jeśli oba pliki istnieją, `server.js` startuje HTTPS zamiast HTTP)
 
 ## Panel (`claude-panel/`)
 
 ```
 claude-panel/
-  server.js              ← thin entrypoint: http.createServer + listen + WS upgrade dispatch (~20 linii)
+  server.js              ← thin entrypoint: http/https.createServer (HTTPS gdy TLS_KEY+TLS_CERT istnieją) + listen + WS upgrade dispatch
   start.sh               ← entrypoint kontenera: tmux+claude (jeśli brak) + ttyd w tle + `node --watch server.js`
   Dockerfile             ← node:22-slim + tmux + ttyd + git + docker.io + @anthropic-ai/claude-code (multi-arch)
   tmux.conf              ← config dla tmuxa odpalanego w tym samym kontenerze
@@ -68,7 +72,12 @@ claude-panel/
     queue.js             ← server-side kolejka: enqueue/cancel/clearAll + worker (dispatch tylko gdy detectStatus===idle, fallback timer 2s)
     proxy.js             ← HTTP/WS proxy do ttyd na 127.0.0.1:7681 z injekcją CSS scrollbarów (route /terminal)
     usage.js             ← fetchUsage: api.anthropic.com/api/oauth/usage z OAuth tokenem z .credentials.json, cache 60s
-    routes.js            ← dispatcher: GET / + /terminal + /healthz + /api/{sessions,session,latest,stream,commands,send,send-config,usage,pane,queue,queue/cancel,queue/clear,interrupt}
+    asr.js               ← klient sidecara ASR: transcribe(audio, mime, lang) + checkHealth (multipart POST na ASR_URL)
+    tts.js               ← klient sidecara TTS: synthesize(text, language) (multipart POST /tts na ASR_URL)
+    model.js             ← getCurrentModel (z tail JSONL) + switchModel (send /model do TUI) + MODELS
+    nudge.js             ← zarządzanie /goal: start/stop/status (send /goal do TUI przez tmux)
+    btw.js               ← watchery /btw: tail capture-pane + broadcast SSE (btw-start/tick/end), Escape na close
+    routes.js            ← dispatcher: GET / + /terminal + /healthz + /api/{sessions,session,latest,stream,commands,send,send-config,usage,pane,queue,queue/cancel,queue/clear,interrupt,btw,btw/close,goal,asr,asr/health,tts,model}
     ui/
       i18n.js            ← słowniki `pl` + `en` (locale, etykiety, plurale `plik/pliki/plików`); `pick(lang)` → dict
       styles.js          ← `(t) => CSS` (interpoluje stringi do pseudo-elementów `::after/::before`)
@@ -116,6 +125,11 @@ claude-panel/
 - `POST /api/interrupt` — `tmux send-keys Escape` → przerywa bieżący turn Claude'a.
 - `POST /api/btw` — body `{ question }`. Wysyła `/btw <question>` do TUI **omijając kolejkę** + uruchamia watcher `btw.js` który tail'uje `capture-pane` i broadcastuje do SSE. Zwraca `{ok, id}`. Bez załączników, bez parowania z JSONL (Claude Code'owy `/btw` to TUI overlay — nie zapisuje do JSONL, jedyne źródło to bufor pane'a). SSE: `{type:"btw-start", id, question}`, `{type:"btw-tick", id, text}` (~co 800 ms), `{type:"btw-end", id, reason, closed}`.
 - `POST /api/btw/close?id=` — kończy watcher i wysyła `Escape` do tmuxa, żeby zamknąć overlay `/btw` i odblokować normalną konwersację. 200 jak ok, 404 jak nie ma takiego id.
+- `GET /api/goal` — aktualny stan celu (`nudge.js`). `POST /api/goal` — body `{ condition }` (albo `{ action: "stop" }`); wysyła `/goal <condition>` do TUI.
+- `GET /api/asr/health` — `{ ok, device, tts }` z sidecara ASR (`asr/server.py`); `ok:false` gdy modele jeszcze się ładują.
+- `POST /api/asr?lang=` — body audio (multipart/binarne, limit 10 MB). Transkrypcja przez Whisper w sidecarze; `lang` z locale panelu. Zwraca `{ text, language }`.
+- `POST /api/tts?lang=` — body `{ text }` (limit 100 KB). Synteza mowy XTTS w sidecarze; `lang` z locale panelu. Zwraca `audio/wav`.
+- `GET /api/model` — `{ ok, current, models }`. `POST /api/model` — body `{ model }`; wysyła `/model <id>` do TUI (`model.js`).
 - `GET /healthz` — `{ ok: true }`.
 
 ### Gotchas

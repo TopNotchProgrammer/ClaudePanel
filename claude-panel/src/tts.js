@@ -2,7 +2,7 @@ const http = require("node:http");
 
 const ASR_URL = process.env.ASR_URL || "http://127.0.0.1:8000";
 
-function synthesize(text) {
+function synthesize(text, language) {
   const parsed = new URL(ASR_URL);
   const boundary = "----ttsbound" + Date.now().toString(36);
 
@@ -11,6 +11,11 @@ function synthesize(text) {
     "--" + boundary + "\r\n"
     + "Content-Disposition: form-data; name=\"text\"\r\n\r\n"
     + text + "\r\n"
+  ));
+  parts.push(Buffer.from(
+    "--" + boundary + "\r\n"
+    + "Content-Disposition: form-data; name=\"language\"\r\n\r\n"
+    + (language || "pl") + "\r\n"
   ));
   parts.push(Buffer.from("--" + boundary + "--\r\n"));
   const body = Buffer.concat(parts);

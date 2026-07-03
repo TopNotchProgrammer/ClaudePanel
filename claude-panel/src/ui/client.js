@@ -382,7 +382,7 @@ if(interruptBtn) interruptBtn.addEventListener('click', ()=>{
   fetch('/api/interrupt', {method:'POST'})
     .then(r=>r.json().catch(()=>({})))
     .then(d=>{
-      if(d && d.ok){ flipToIdle(); showToast('przerwano', 'ok'); }
+      if(d && d.ok){ flipToIdle(); showToast(T.interrupted, 'ok'); }
       else showToast(T.errPrefix+((d && d.error) || ''), 'err');
     })
     .catch(e=>showToast(T.errPrefix+e.message, 'err'));
@@ -1147,6 +1147,11 @@ async function initLatest(){
   const d=await r.json();
   if(d.empty){ state.feed=null; state.feedEmptyReason=d.reason||null; return; }
   state.feedEmptyReason=null;
+  // _ttsSpokenIndexes is keyed by per-session event index _i; a new session
+  // reuses those indexes, so drop the marks when the session actually changes
+  // or old indexes would suppress TTS for the new session's replies.
+  const prevSessionId=state.feed&&state.feed.sessionId;
+  if(prevSessionId&&prevSessionId!==d.sessionId) _ttsSpokenIndexes={};
   const idx=d.events.map(e=>e._i);
   state.feed={
     sessionId:d.sessionId, project:d.project, totalEvents:d.totalEvents, meta:d.meta,
@@ -1693,7 +1698,7 @@ function _ttsProcess(){
   if(_ttsPlaying || !_ttsQueue.length) return;
   var text = _ttsQueue.shift();
   _ttsPlaying = true;
-  fetch('/api/tts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: text})})
+  fetch('/api/tts?lang='+(T.locale||'pl'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: text})})
     .then(function(r){
       if(!r.ok) throw new Error('TTS '+r.status);
       return r.arrayBuffer();
