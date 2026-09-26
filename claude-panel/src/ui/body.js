@@ -78,6 +78,7 @@ module.exports = (t) => `
 </header>
 <main id="main"></main>
 <div id="pane-preview" class="pane-preview" style="display:none"><pre id="pane-preview-pre"></pre></div>
+<div id="menu-card" class="menu-card" hidden></div>
 <form id="send-form" class="send-form" style="display:none" autocomplete="off">
   <div class="send-inner">
     <div id="attachments" class="attachments"></div>

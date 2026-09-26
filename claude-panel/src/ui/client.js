@@ -475,7 +475,96 @@ sendText.addEventListener('input',()=>{
 
 function setSendFormVisible(v){
   sendForm.style.display = v ? 'flex' : 'none';
+  renderMenu();
 }
+
+// Selection menu from the TUI (AskUserQuestion, plan approval…), parsed
+// server-side from the tmux pane. Each click = "move cursor there + Enter".
+const menuCard = document.getElementById('menu-card');
+let menuState = null;
+let menuBusy = false;
+let menuRenderedKey = '';
+function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+function renderMenu(){
+  const show = !!menuState && sendForm.style.display !== 'none';
+  const key = show ? JSON.stringify(menuState) + menuBusy : '';
+  if(key === menuRenderedKey) return;
+  menuRenderedKey = key;
+  const oldInput = menuCard.querySelector('.menu-text input');
+  const keep = oldInput ? { sig: menuCard.dataset.sig, value: oldInput.value, focus: document.activeElement === oldInput } : null;
+  menuCard.hidden = !show;
+  if(!show){ menuCard.innerHTML = ''; delete menuCard.dataset.sig; return; }
+  const m = menuState;
+  let h = '<div class="menu-h"><span class="k">'+T.menuTitle+'</span>';
+  if(m.tabs) h += '<span class="menu-tabs">'+esc(m.tabs)+'</span>';
+  h += '<span class="spacer"></span>';
+  if(m.tabs){
+    h += '<button type="button" data-menu-key="Left" title="'+escAttr(T.menuPrevTab)+'" aria-label="'+escAttr(T.menuPrevTab)+'">←</button>';
+    h += '<button type="button" data-menu-key="Right" title="'+escAttr(T.menuNextTab)+'" aria-label="'+escAttr(T.menuNextTab)+'">→</button>';
+  }
+  h += '<button type="button" data-menu-key="Escape" title="'+escAttr(T.menuEscTitle)+'">'+T.menuEsc+'</button></div>';
+  if(m.header) h += '<div class="menu-q">'+esc(m.header)+'</div>';
+  h += '<div class="menu-items">';
+  for(const it of m.items){
+    if(it.kind === 'text'){
+      h += '<form class="menu-text'+(it.cursor?' cursor':'')+'" data-idx="'+it.idx+'"><input type="text" enterkeyhint="send" autocomplete="off" placeholder="'+escAttr(T.menuOtherPh)+'" value="'+escAttr(it.value||'')+'"><button type="submit">'+T.menuOtherSend+'</button></form>';
+    } else if(it.kind === 'submit'){
+      h += '<button type="button" class="menu-submit" data-idx="'+it.idx+'">'+T.menuSubmit+' →</button>';
+    } else {
+      const box = it.checked == null ? '' : '<span class="box">'+(it.checked ? '☑' : '☐')+'</span>';
+      h += '<button type="button" class="menu-opt'+(it.cursor?' cursor':'')+(it.checked?' checked':'')+'" data-idx="'+it.idx+'">'
+        + box + '<span class="n">'+it.n+'.</span><span class="txt"><span class="lbl">'+esc(it.label)+'</span>'
+        + (it.desc ? '<span class="desc">'+esc(it.desc)+'</span>' : '') + '</span></button>';
+    }
+  }
+  h += '</div>';
+  menuCard.innerHTML = h;
+  menuCard.dataset.sig = m.sig;
+  menuCard.classList.toggle('busy', menuBusy);
+  // Don't wipe what the user is typing when the menu re-renders (cursor moves etc.).
+  if(keep && keep.sig === m.sig){
+    const ni = menuCard.querySelector('.menu-text input');
+    if(ni){ ni.value = keep.value; if(keep.focus) ni.focus(); }
+  }
+}
+async function refreshMenu(){
+  try{
+    const d = await fetch('/api/menu').then(r=>r.json());
+    menuState = d && d.ok ? d.menu : null;
+  }catch{}
+  renderMenu();
+}
+async function menuAct(action){
+  if(!menuState || menuBusy) return;
+  menuBusy = true;
+  renderMenu();
+  let fresh = false;
+  try{
+    const r = await fetch('/api/menu', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({sig: menuState.sig, action})});
+    const d = await r.json().catch(()=>({}));
+    if(r.status === 409) showToast(T.menuChanged, 'err');
+    else if(!(d && d.ok)) showToast(T.errPrefix+((d && d.error) || ('HTTP '+r.status)), 'err');
+    if(d && 'menu' in d){ menuState = d.menu; fresh = true; }
+  }catch(e){
+    showToast(T.errPrefix+e.message, 'err');
+  }finally{
+    menuBusy = false;
+  }
+  if(fresh) renderMenu(); else await refreshMenu();
+}
+menuCard.addEventListener('click', e=>{
+  const k = e.target.closest('[data-menu-key]');
+  if(k){ menuAct({type:'key', key:k.dataset.menuKey}); return; }
+  const b = e.target.closest('button[data-idx]');
+  if(b) menuAct({type:'select', idx:Number(b.dataset.idx)});
+});
+menuCard.addEventListener('submit', e=>{
+  const f = e.target.closest('form.menu-text');
+  if(!f) return;
+  e.preventDefault();
+  const v = f.querySelector('input').value.trim();
+  if(v) menuAct({type:'text', idx:Number(f.dataset.idx), text:v});
+});
 const filterWrap = document.getElementById('filter-wrap');
 
 let state = { view:'latest', filter:'all', query:'', session:null, sessionMeta:null, focusTs:null, events:null, sessions:null, commands:null, feed:null, pollTimer:null, scrollObs:null, sse:null, polling:false, lastRenderedMaxIndex:null };
@@ -1200,7 +1289,9 @@ function startLatestLoops(){
             return;
           }
           window.__serverStartup = d.startup;
+          refreshMenu();
         }
+        if(d.type==='menu'){ menuState = d.menu; if(!menuBusy) renderMenu(); }
         if(d.type==='tick') pollLatest();
         if(d.type==='queue') handleQueueEvent(d);
         if(d.type==='interrupted') flipToIdle();

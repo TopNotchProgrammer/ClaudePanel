@@ -65,7 +65,8 @@ claude-panel/
     sessions.js          ← readJSONL + rawCache, listSessions, summarize/parse/detectStatus, readHistory, stripMarkup
     sse.js               ← sseClients Set + broadcast + scheduleTick + startWatchers(fs.watch)
     tmux.js              ← runTmux/runTmuxRaw (send-keys -S socket) + sendText (literal+Enter) + sendInterrupt (Escape) + capturePane (cache 500ms)
-    queue.js             ← server-side kolejka: enqueue/cancel/clearAll + worker (dispatch tylko gdy detectStatus===idle, fallback timer 2s)
+    queue.js             ← server-side kolejka: enqueue/cancel/clearAll + worker (dispatch od razu, wstrzymany tylko gdy menu TUI na ekranie, fallback timer 2s)
+    menu.js              ← parser menu wyboru z capture-pane (AskUserQuestion, plan approval) + polling/SSE + act() (strzałki+Enter / tekst)
     proxy.js             ← HTTP/WS proxy do ttyd na 127.0.0.1:7681 z injekcją CSS scrollbarów (route /terminal)
     usage.js             ← fetchUsage: api.anthropic.com/api/oauth/usage z OAuth tokenem z .credentials.json, cache 60s
     routes.js            ← dispatcher: GET / + /terminal + /healthz + /api/{sessions,session,latest,stream,commands,send,send-config,usage,pane,queue,queue/cancel,queue/clear,interrupt}
@@ -93,9 +94,14 @@ claude-panel/
 
 8. **Optymistyczne renderowanie własnych wysyłek + server-side kolejka + Esc.**
     - **Pending render.** Po `POST /api/send` klient od razu wstawia event do feedu z klasą `.pending` ("w kolejce…" / "wysyłam…" / "wysłane, czekam na claude…" w zależności od stanu z SSE). Gdy realny wpis pojawi się w JSONL, `reapPending` paruje po znormalizowanym tekście (prefix-matching dla payloadów ze ścieżką uploadu) i zdejmuje pending. Po 30s bez parowania pending dostaje klasę `.stuck` (czerwony "brak odpowiedzi z tmux") z lokalnym przyciskiem ×.
-    - **Server-side queue (`queue.js`).** `POST /api/send` nie wysyła do tmuxa od razu — enqueue'uje w pamięci kontenera. Worker dyspatchuje **tylko gdy `detectStatus`(najnowsza sesja) === `idle`**: czeka aż Claude skończy bieżący turn, dopiero wtedy `sendText` na kolejnej pozycji + 300ms cooldown na flip statusu. Trigger workera: na enqueue, na każdym SSE ticku z fs.watch (= zmiana JSONL), oraz fallback timer 2 s. Skutek: wpisanie 3 wiadomości pod rząd podczas myślenia → 3 osobne tury Claude'a, nie jedno sklejone w bufferze TUI. Każda zmiana stanu (added/sending/sent/cancelled/error/cleared/dropped) leci jako SSE event `{type:"queue", event, queue:[...], id}`.
+    - **Server-side queue (`queue.js`).** `POST /api/send` enqueue'uje w pamięci kontenera, a worker **od razu** robi `sendText` (tekst + Enter), także gdy Claude pracuje — tak jak pisanie w terminalu; Claude Code sam kolejkuje input, który przyjdzie w trakcie turnu ("Press up to edit queued messages"). Kolejka tylko serializuje wysyłki (300ms odstępu) i **wstrzymuje je, gdy na ekranie jest menu wyboru** (`menu.js`) — inaczej cyfry/Enter wybrałyby opcję w dialogu. Trigger workera: na enqueue, na każdym SSE ticku z fs.watch, oraz fallback timer 2 s. Każda zmiana stanu (added/sending/sent/cancelled/error/cleared/dropped) leci jako SSE event `{type:"queue", event, queue:[...], id}`.
     - **Cancel.** `POST /api/queue/cancel?id=` zdejmuje z kolejki (zwraca 409 jak już `sending`). Klient pokazuje × na każdym pending z `_queueId`. Errored/stuck mają lokalny dismiss (`data-local-pid`).
     - **Esc.** Przycisk × w kółku w `send-form` (obok załączania plików) — `POST /api/interrupt` → `tmux send-keys Escape` → Claude przerywa bieżący turn. Disabled gdy `status==='idle'`, czerwony gdy aktywny, czerwone tło na hoverze.
+
+9. **Menu wyboru z TUI (`menu.js`)** — `AskUserQuestion`, akceptacja planu i inne numerowane menu Claude Code. Serwer co 1 s (co 5 s bez podłączonych klientów SSE) robi `capture-pane` i parsuje ekran: linie `❯ 1. …` / `  2. …`, opisy pod nimi, checkboxy `[ ]`/`[✔]` (multiSelect), wiersz `Submit`, pasek zakładek `← ☐ A ☐ B ✔ Submit →`, pole „Type something” (opcja tuż przed „Chat about this”). Zmiana stanu → SSE `{type:"menu", menu|null}`. Klient pokazuje kartę `#menu-card` nad `send-form` z dużymi przyciskami (działa na telefonie). Każda akcja = strzałki od kursora do pozycji + `Enter` (wybór / toggle / Submit); tekst = nawigacja + `BSpace`×stara wartość + literal (+ `Enter` przy single-select). Kolejka **nie dispatchuje, gdy menu jest na ekranie**.
+    - **Dlaczego pane, a nie JSONL:** wpis assistant z `tool_use` `AskUserQuestion` bywa zapisywany do JSONL dopiero **po** odpowiedzi — przy otwartym dialogu JSONL często kończy się na prompcie usera (→ `detectStatus` = thinking → po 2 min idle).
+    - Menu jest uznawane tylko gdy jest ostatnie na ekranie (pod nim max stopka, bez `────`/`❯`), N≥2 opcji numerowanych od 1 — echo listy `❯ 1. …` z wiadomości usera w transkrypcie nie łapie się.
+    - `sig` (nagłówek + etykiety, bez kursora/checkboxów) chroni przed klikaniem w menu, które już zniknęło/zmieniło się → 409.
 
 ### HTTP API
 
@@ -116,11 +122,15 @@ claude-panel/
 - `POST /api/interrupt` — `tmux send-keys Escape` → przerywa bieżący turn Claude'a.
 - `POST /api/btw` — body `{ question }`. Wysyła `/btw <question>` do TUI **omijając kolejkę** + uruchamia watcher `btw.js` który tail'uje `capture-pane` i broadcastuje do SSE. Zwraca `{ok, id}`. Bez załączników, bez parowania z JSONL (Claude Code'owy `/btw` to TUI overlay — nie zapisuje do JSONL, jedyne źródło to bufor pane'a). SSE: `{type:"btw-start", id, question}`, `{type:"btw-tick", id, text}` (~co 800 ms), `{type:"btw-end", id, reason, closed}`.
 - `POST /api/btw/close?id=` — kończy watcher i wysyła `Escape` do tmuxa, żeby zamknąć overlay `/btw` i odblokować normalną konwersację. 200 jak ok, 404 jak nie ma takiego id.
+- `GET /api/menu` — `{ ok, menu }`: aktualnie otwarte menu TUI albo `null`. `menu = {tabs, header, multi, items:[{idx, kind:"option"|"text"|"submit", n, label, desc, checked, cursor, value}], footer, sig}`.
+- `POST /api/menu` — body `{ sig, action }`, `action` = `{type:"select", idx}` | `{type:"text", idx, text}` | `{type:"key", key:"Escape"|"Left"|"Right"|"Tab"|"BTab"}`. 409 gdy `sig` nie pasuje do ekranu. Zwraca `{ok, menu}` ze stanem po akcji.
 - `GET /healthz` — `{ ok: true }`.
 
 ### Gotchas
 
 - **Uploady kasują się na real container boot, nie na `--watch` restart.** Marker `/tmp/claude-panel-boot-marker` przeżywa restart procesu z `node --watch`, ale ginie na `docker compose up`. Czyli edycje kodu nie czyszczą uploadów, a recreate kontenera — czyści.
+- **`node --watch` gubi pliki podmieniane przez rename.** Edytory (w tym narzędzia Claude'a) zapisują przez temp+rename → nowy inode, watcher siedzi na starym. Pierwsza edycja pliku restartuje serwer, kolejne edycje tego samego pliku już nie. Obejście bez restartu kontenera (który zabija tmuxa z Claude'em): `touch server.js`.
+- **Wiadomości wysłane w trakcie turnu nie mają wpisu `user` w JSONL.** Claude Code wchłania je do bieżącego turnu i loguje tylko jako `{"type":"attachment","attachment":{"type":"queued_command","prompt":…}}` (+ `queue-operation` z `reason:"absorbed_mid_turn"`). `parseSession` zamienia je na zwykły event `user` — bez tego pending w panelu nigdy się nie paruje (→ „brak odpowiedzi z tmux”), a wiadomość nie pojawia się w transkrypcie. Wiadomości zakolejkowane, które poszły dopiero po turnie, mają normalny wpis `user` (`promptSource:"queued"`).
 - **Raw events są cache'owane po (mtime, size)** w `rawCache` (max 64 plików). Inwalidacja automatyczna na zmianę pliku — bez ręcznego bustowania.
 - **SSE `scheduleTick`** jest debounce'owany, żeby przy szybkim zapisywaniu JSONL nie generować eventu na linię.
 - **Slash-command meta-entries** (`/clear` itd.) są skipowane w `detectStatus` — wpis usera bez odpowiedzi assistanta nie zostawia "thinking" na zawsze.

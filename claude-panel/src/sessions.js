@@ -160,6 +160,15 @@ function parseSession(id, project) {
     } else if (e.type === "system" && e.content) {
       const clean = stripMarkup(e.content);
       if (clean) out.push({ kind: "system", text: clean, ts });
+    } else if (e.type === "attachment" && e.attachment?.type === "queued_command") {
+      // A prompt sent while Claude was mid-turn gets absorbed into the running
+      // turn and is logged only as this attachment — no regular user entry.
+      const a = e.attachment;
+      const human = !a.origin || a.origin.kind === "human";
+      if (human && (!a.commandMode || a.commandMode === "prompt") && typeof a.prompt === "string") {
+        const clean = stripMarkup(a.prompt, { keepCmd: true });
+        if (clean) out.push({ kind: "user", text: clean, ts: a.timestamp || ts });
+      }
     }
   }
   return out;

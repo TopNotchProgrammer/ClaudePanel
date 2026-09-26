@@ -49,6 +49,21 @@ async function sendText(socket, target, text) {
   return next;
 }
 
+// Runs a scripted sequence of {key} / {literal} steps with a pause between
+// each one — Ink treats several keys arriving in one stdin chunk as a paste,
+// so menu navigation must be spaced out.
+async function sendSteps(socket, target, steps, gapMs = 180) {
+  const next = sendChain.then(async () => {
+    for (const s of steps) {
+      if (s.literal != null) await runTmux(socket, ["send-keys", "-t", target, "-l", s.literal]);
+      else await runTmux(socket, ["send-keys", "-t", target, s.key]);
+      await new Promise(r => setTimeout(r, s.wait || gapMs));
+    }
+  });
+  sendChain = next.catch(() => {});
+  return next;
+}
+
 async function sendInterrupt(socket, target) {
   await runTmux(socket, ["send-keys", "-t", target, "Escape"]);
 }
@@ -111,4 +126,4 @@ async function getClaudeStartedAtMs(socket, target) {
   return val;
 }
 
-module.exports = { runTmux, sendText, sendInterrupt, capturePane, invalidatePaneCache, getClaudeStartedAtMs };
+module.exports = { runTmux, sendText, sendSteps, sendInterrupt, capturePane, invalidatePaneCache, getClaudeStartedAtMs };

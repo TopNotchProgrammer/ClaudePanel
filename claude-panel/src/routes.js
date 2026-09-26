@@ -15,6 +15,9 @@ queueMod.setBroadcaster(sseBroadcast);
 queueMod.startPeriodic();
 const btwMod = require("./btw");
 btwMod.setBroadcaster(sseBroadcast);
+const menuMod = require("./menu");
+menuMod.setBroadcaster(sseBroadcast);
+menuMod.start(process.env.TMUX_SOCKET || "/host-tmux/default", process.env.TMUX_TARGET || "");
 const { proxyHttp } = require("./proxy");
 const { fetchUsage } = require("./usage");
 const goalMod = require("./nudge");
@@ -210,6 +213,26 @@ function handle(req, res) {
           json(res, 200, { ok: true });
         })
         .catch(e => json(res, 500, { error: e.message }));
+      return;
+    }
+    if (pathname === "/api/menu" && req.method === "GET") {
+      menuMod.refresh()
+        .then(menu => json(res, 200, { ok: true, menu }))
+        .catch(e => json(res, 500, { ok: false, error: e.message }));
+      return;
+    }
+    if (pathname === "/api/menu" && req.method === "POST") {
+      if (!process.env.TMUX_TARGET) return json(res, 500, { error: "TMUX_TARGET not set" });
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", () => {
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+        catch { return json(res, 400, { error: "bad json" }); }
+        menuMod.act(String(body.sig || ""), body.action || {})
+          .then(r => json(res, r.ok ? 200 : r.status, r))
+          .catch(e => json(res, 500, { error: e.message }));
+      });
       return;
     }
     if (pathname === "/api/queue" && req.method === "GET") {

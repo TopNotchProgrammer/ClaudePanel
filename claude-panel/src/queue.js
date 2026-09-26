@@ -62,22 +62,13 @@ function clearAll() {
   return dropped;
 }
 
-async function getStatus() {
-  // Lazy require avoids load-order coupling.
-  const { listSessions, detectStatus } = require("./sessions");
-  const list = listSessions();
-  if (!list.length) return "idle";
-  return detectStatus(list[0].id, list[0].project);
-}
-
 async function isReady() {
-  const status = await getStatus().catch(() => "idle");
-  if (status === "idle") return true;
-  // After an Esc interrupt, JSONL won't get an assistant turn for the aborted
-  // request, so detectStatus will keep saying "thinking" until the 10-min cap.
-  // Honor a short grace window where we trust the TUI is actually idle.
-  if (interruptedAt && Date.now() - interruptedAt < INTERRUPT_GRACE_MS) return true;
-  return false;
+  // Send right away, like typing + Enter in the terminal — Claude Code queues
+  // input that arrives mid-turn on its own. Only exception: a selection menu
+  // on screen (AskUserQuestion, plan approval) would swallow the keystrokes
+  // (digits/Enter pick options), so hold until it's answered.
+  const menu = await require("./menu").refresh().catch(() => null);
+  return !menu;
 }
 
 function markInterrupted() {
