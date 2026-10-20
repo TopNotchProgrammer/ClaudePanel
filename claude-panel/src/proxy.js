@@ -14,6 +14,12 @@ const INJECT_CSS = `
 body{background:#0d1117}
 `.trim();
 
+// ttyd po zamknięciu WebSocketu pokazuje tylko „Press ⏎ to Reconnect” — przy wygasłej sesji / wylogowaniu
+// Enter daje to samo w kółko. Sprawdzamy sesję i przy 401 przenosimy na logowanie.
+const INJECT_JS = `(function(){var W=window.WebSocket;window.WebSocket=function(u,p){var s=p===undefined?new W(u):new W(u,p);
+s.addEventListener('close',function(){fetch('/api/queue',{cache:'no-store'}).then(function(r){if(r.status===401)location.href='/login?next='+encodeURIComponent(location.pathname)}).catch(function(){})});return s};
+window.WebSocket.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(function(k){window.WebSocket[k]=W[k]})})();`;
+
 function isHtmlIndexPath(reqUrl) {
   const path = (reqUrl || "/").split("?")[0];
   return path === "/terminal" || path === "/terminal/";
@@ -49,7 +55,7 @@ function proxyHttp(req, res) {
           if (res.writableEnded || res.headersSent) return;
           try {
             let html = Buffer.concat(chunks).toString("utf8");
-            const styleTag = "<style>" + INJECT_CSS + "</style>";
+            const styleTag = "<style>" + INJECT_CSS + "</style><script>" + INJECT_JS + "</script>";
             html = html.includes("</head>")
               ? html.replace("</head>", styleTag + "</head>")
               : styleTag + html;

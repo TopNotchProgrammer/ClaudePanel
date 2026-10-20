@@ -8,6 +8,12 @@ const UPLOADS_DIR = process.env.UPLOADS_DIR || "/tmp/claude-panel-uploads";
 const UPLOADS_CLAUDE_PATH = process.env.UPLOADS_CLAUDE_PATH || UPLOADS_DIR;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const STARTUP_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const TLS_CERT = process.env.TLS_CERT || "";
+const TLS_KEY = process.env.TLS_KEY || "";
+const TLS_CA = process.env.TLS_CA || "";
+const PANEL_PASSWORD = process.env.PANEL_PASSWORD || "";
+// PANEL_AUTH=off — świadome wyłączenie hasła (panel za własnym auth: reverse proxy, VPN)
+const PANEL_AUTH_OFF = /^(off|false|0|no)$/i.test(process.env.PANEL_AUTH || "");
 const LANG = (process.env.PANEL_LANG === "en" || process.env.PANEL_LANG === "pl") ? process.env.PANEL_LANG : "pl";
 
 const MIME_TO_EXT = {
@@ -47,5 +53,10 @@ module.exports = {
   MAX_UPLOAD_BYTES,
   STARTUP_ID,
   LANG,
+  PANEL_PASSWORD,
+  PANEL_AUTH_OFF,
+  TLS_CERT,
+  TLS_KEY,
+  TLS_CA,
   MIME_TO_EXT,
 };

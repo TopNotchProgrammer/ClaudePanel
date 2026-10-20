@@ -10,6 +10,7 @@ const pl = {
   tabPanePreview: "podgląd CLI",
   tabReload: "odśwież",
   tabSearch: "szukaj",
+  tabLogout: "wyloguj",
 
   usageSession: "sesja",
   usageWeek: "tydzień",
@@ -45,6 +46,7 @@ const pl = {
 
   errLabel: "błąd",
   errPrefix: "błąd: ",
+  connLost: "utracono połączenie z panelem — odśwież stronę",
   menuTitle: "Claude pyta",
   menuEsc: "Esc",
   menuEscTitle: "anuluj dialog (Escape)",
@@ -118,6 +120,18 @@ const pl = {
   goalTooltip: "/goal",
   goalDefaultCondition: "all tasks from the plan are completed, tests pass, and there are no remaining TODOs",
   goalEmpty: "wpisz warunek",
+
+  loginTitle: "Logowanie do panelu",
+  loginPassword: "hasło",
+  loginButton: "zaloguj",
+  loginWrong: "złe hasło",
+  loginLocked: "za dużo prób — spróbuj ponownie za {s} s",
+  authMissingTitle: "Ustaw hasło do panelu",
+  authMissingBody: "Panel wymaga hasła, a zmienna <code>PANEL_PASSWORD</code> nie jest ustawiona. Dopisz ją do <code>environment:</code> usługi w <code>compose.yml</code>:",
+  authMissingEnv: "a samo hasło do pliku <code>.env</code> obok <code>compose.yml</code> (poza gitem; pojedyncze cudzysłowy, żeby <code>$</code> i <code>#</code> nie były interpretowane). Potem odtwórz kontener:",
+  authMissingExample: "twoje-dlugie-haslo",
+  logoutConfirm: "Wylogować? Otwarte karty i terminal na tym urządzeniu zostaną rozłączone.",
+  authMissingOff: "Panel stoi za własnym uwierzytelnianiem (reverse proxy z auth, VPN)? Zamiast hasła ustaw <code>PANEL_AUTH: \"off\"</code>.",
 };
 
 const en = {
@@ -132,6 +146,7 @@ const en = {
   tabPanePreview: "CLI preview",
   tabReload: "refresh",
   tabSearch: "search",
+  tabLogout: "log out",
 
   usageSession: "session",
   usageWeek: "week",
@@ -167,6 +182,7 @@ const en = {
 
   errLabel: "error",
   errPrefix: "error: ",
+  connLost: "lost connection to the panel — reload the page",
   menuTitle: "Claude asks",
   menuEsc: "Esc",
   menuEscTitle: "cancel dialog (Escape)",
@@ -240,6 +256,18 @@ const en = {
   goalTooltip: "/goal",
   goalDefaultCondition: "all tasks from the plan are completed, tests pass, and there are no remaining TODOs",
   goalEmpty: "enter a condition",
+
+  loginTitle: "Panel login",
+  loginPassword: "password",
+  loginButton: "log in",
+  loginWrong: "wrong password",
+  loginLocked: "too many attempts — try again in {s} s",
+  authMissingTitle: "Set a panel password",
+  authMissingBody: "The panel requires a password, but <code>PANEL_PASSWORD</code> is not set. Add it to the service's <code>environment:</code> in <code>compose.yml</code>:",
+  authMissingEnv: "and put the password itself in a <code>.env</code> file next to <code>compose.yml</code> (outside git; single quotes so <code>$</code> and <code>#</code> aren't interpreted). Then recreate the container:",
+  authMissingExample: "your-long-password",
+  logoutConfirm: "Log out? Open tabs and the terminal on this device will be disconnected.",
+  authMissingOff: "Panel already behind your own auth (reverse proxy with auth, VPN)? Set <code>PANEL_AUTH: \"off\"</code> instead of a password.",
 };
 
 function pick(lang) {

@@ -21,6 +21,8 @@ menuMod.start(process.env.TMUX_SOCKET || "/host-tmux/default", process.env.TMUX_
 const { proxyHttp } = require("./proxy");
 const { fetchUsage } = require("./usage");
 const goalMod = require("./nudge");
+const { serveCa } = require("./tls");
+const auth = require("./auth");
 const INDEX_HTML = require("./ui");
 
 function json(res, status, body) {
@@ -42,8 +44,12 @@ function html(res, body) {
 }
 
 function handle(req, res) {
-  const parsed = url.parse(req.url, true);
+  let parsed;
+  try { parsed = url.parse(req.url, true); }
+  catch { res.writeHead(400, { "Content-Type": "text/plain" }); return res.end("bad request"); } // np. "GET http://[::1/" wywracał proces
   const pathname = parsed.pathname || "/";
+  // Hasło do panelu: wszystko (UI, REST, SSE /api/stream, /terminal) poza /healthz i /ca.crt.
+  if (auth.guard(req, res, pathname, new URLSearchParams(parsed.search || ""))) return;
   try {
     if (pathname === "/" || pathname === "/index.html") {
       return html(res, INDEX_HTML);
@@ -121,6 +127,7 @@ function handle(req, res) {
       res.write("retry: 3000\n\n");
       res.write("data: " + JSON.stringify({ type: "hello", startup: STARTUP_ID }) + "\n\n");
       sseClients.add(res);
+      auth.track(req, res.socket); // wylogowanie zamyka strumień
       const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch {} }, 25000);
       req.on("close", () => { clearInterval(ping); sseClients.delete(res); });
       return;
@@ -288,6 +295,9 @@ function handle(req, res) {
         target: process.env.TMUX_TARGET || "",
         socket: process.env.TMUX_SOCKET || "",
       });
+    }
+    if (pathname === "/ca.crt") {
+      return serveCa(res);
     }
     if (pathname === "/healthz") {
       return json(res, 200, { ok: true });

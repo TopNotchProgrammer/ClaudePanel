@@ -30,6 +30,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .tab{flex:0 0 auto;padding:7px 12px;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:13px;background:transparent;cursor:pointer;white-space:nowrap}
 .tab.active{background:var(--panel);color:var(--text);border-color:var(--accent)}
 .tab-icon{padding:7px 10px;display:inline-flex;align-items:center;justify-content:center}
+.logout-form{display:contents;margin:0}
 .tab-icon.has-query,.tab-icon.active{border-color:var(--accent);color:var(--accent)}
 .tab-group{display:contents}
 .tab-spacer{flex:1 1 auto}

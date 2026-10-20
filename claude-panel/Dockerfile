@@ -5,7 +5,7 @@ ARG TARGETARCH
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      tmux ca-certificates curl git docker.io \
+      tmux ca-certificates openssl curl git docker.io \
  && case "$TARGETARCH" in \
       amd64) TTYD_ARCH=x86_64 ;; \
       arm64) TTYD_ARCH=aarch64 ;; \

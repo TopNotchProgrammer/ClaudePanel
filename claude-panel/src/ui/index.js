@@ -1,7 +1,7 @@
 const styles = require("./styles");
 const body = require("./body");
 const client = require("./client");
-const { LANG } = require("../config");
+const { LANG, PANEL_PASSWORD, PANEL_AUTH_OFF } = require("../config");
 const { pick } = require("./i18n");
 
 const t = pick(LANG);
@@ -15,7 +15,7 @@ const INDEX_HTML = `<!doctype html>
 <title>${t.appTitle}</title>
 <style>${styles(t)}</style>
 </head>
-<body>${body(t)}<script>window.T=${JSON.stringify(t)};</script><script>${client}</script>
+<body>${body(t, { logout: !PANEL_AUTH_OFF && !!PANEL_PASSWORD })}<script>window.T=${JSON.stringify(t)};</script><script>${client}</script>
 </body>
 </html>`;
 

@@ -17,8 +17,10 @@ services:
       UPLOADS_DIR: /app/claude-panel/uploads
       UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
       PANEL_LANG: pl
+      PANEL_PASSWORD: ${PANEL_PASSWORD:-} # hasło do panelu — ustaw w .env obok compose.yml (PANEL_PASSWORD=...), poza gitem
+      TLS_HOSTNAMES: "192.168.68.44,claude.topnotchprogrammer.com" # dodatkowe SAN-y certu (IP/hosty z LAN), po przecinku
     ports:
-      - "8080:8080"
+      - "8060:8080"
     stdin_open: true
     tty: true
     restart: unless-stopped

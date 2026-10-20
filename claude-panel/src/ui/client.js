@@ -66,12 +66,29 @@ document.getElementById('terminal-toggle').addEventListener('click',()=>{
   window.open('/terminal/', '_blank', 'noopener');
 });
 
-function showToast(msg, kind){
+// Sesja wygasła / wylogowano w innej karcie → serwer zwraca 401 na /api/* — wracamy na stronę logowania.
+// Wpisany tekst przeżywa przejście przez logowanie (załączniki nie — za duże na sessionStorage).
+const rawFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const r = await rawFetch(...args);
+  if(r.status === 401){
+    try{ if(sendText.value) sessionStorage.setItem('cpa-draft', sendText.value); }catch{}
+    location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash);
+  }
+  return r;
+};
+try{
+  const draft = sessionStorage.getItem('cpa-draft');
+  if(draft && !sendText.value){ sendText.value = draft; sendText.dispatchEvent(new Event('input')); }
+  sessionStorage.removeItem('cpa-draft');
+}catch{}
+
+function showToast(msg, kind, ms){
   sendStatusEl.textContent = msg;
   sendStatusEl.className = 'pill ' + (kind==='ok' ? 'send-ok' : kind==='err' ? 'send-err' : '');
   sendStatusEl.style.display = '';
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(()=>{ sendStatusEl.style.display='none'; }, 2200);
+  showToast._t = setTimeout(()=>{ sendStatusEl.style.display='none'; }, ms || 2200);
 }
 
 const attachBtn = document.getElementById('attach-btn');
@@ -1280,6 +1297,25 @@ function startLatestLoops(){
   if(state.sse) return; // idempotent — don't restart on every render
   try{
     state.sse=new EventSource('/api/stream');
+    // Serwer leży dłużej niż chwilę restartu albo zmienił się cert (nowy projekt na tym samym host:port,
+    // regeneracja) albo sesja wygasła — EventSource i fetch padają po cichu, a UI wygląda na żywe. Sonda
+    // /api/queue rozstrzyga: 401 → logowanie, błąd sieci/certu → toast „odśwież” (wtedy ostrzeżenie o certyfikacie).
+    let sseErrors=0;
+    state.sse.onopen=()=>{ sseErrors=0; };
+    state.sse.onerror=(ev)=>{
+      // Odpowiedź != 200 (401 po wylogowaniu, 502 z proxy) zamyka EventSource na stałe — bez ponowień.
+      // Sonda: 401 → wrapper fetch przenosi na logowanie; 200 → stawiamy strumień od nowa; błąd sieci → toast.
+      if(ev.target.readyState===EventSource.CLOSED){
+        if(state.sse===ev.target) state.sse=null;
+        fetch('/api/queue',{cache:'no-store'})
+          .then(r=>{ if(r.ok) setTimeout(()=>{ if(!state.sse && !location.hash.slice(1).replace('/','')) startLatestLoops(); },3000); })
+          .catch(()=>showToast(T.connLost,'err',8000));
+        return;
+      }
+      if(++sseErrors<3) return;
+      // /api/queue, nie /healthz: przy wygasłej sesji 401 przekieruje na logowanie (wrapper fetch wyżej)
+      fetch('/api/queue',{cache:'no-store'}).catch(()=>showToast(T.connLost,'err',8000));
+    };
     state.sse.onmessage=(e)=>{
       try{
         const d=JSON.parse(e.data);

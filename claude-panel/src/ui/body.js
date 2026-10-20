@@ -1,4 +1,4 @@
-module.exports = (t) => `
+module.exports = (t, opts = {}) => `
 <header>
   <div class="row">
     <a id="back" class="back" href="#" style="display:none">‹</a>
@@ -41,6 +41,9 @@ module.exports = (t) => `
       <button class="tab tab-icon" id="search-toggle" type="button" aria-label="${t.tabSearch}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
+      ${opts.logout ? `<form method="post" action="/logout" class="logout-form" onsubmit="return confirm(T.logoutConfirm)"><button class="tab tab-icon" id="logout-btn" type="submit" aria-label="${t.tabLogout}" title="${t.tabLogout}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button></form>` : ""}
     </div>
     <button class="tab tab-icon tab-swap" id="tab-swap" type="button" aria-label="more">
       <svg class="swap-down" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 8 12 13 17 8"/><polyline points="7 15 12 20 17 15"/></svg>

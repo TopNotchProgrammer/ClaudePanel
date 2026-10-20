@@ -31,7 +31,7 @@ W środku kontenera `claude-panel/start.sh` (entrypoint) odpala równolegle:
 - `ttyd -p 7681 -i 127.0.0.1 -W -b /terminal tmux attach -t cpa-tmux` w tle (terminal w przeglądarce),
 - `node --watch server.js` jako foreground (proces główny kontenera).
 
-Panel siedzi na `http://localhost:8080`. Edycja plików w `claude-panel/src/**` → `node --watch` restartuje serwer w kontenerze (bind-mount `./claude-panel:/srv` jest RW). Jeśli `fs.watch` nie złapie zmiany → `docker restart claude-panel`.
+Panel siedzi na `https://localhost:8080` (goły HTTP → 307 na https). Edycja plików w `claude-panel/src/**` → `node --watch` restartuje serwer w kontenerze (bind-mount `./claude-panel:/srv` jest RW). Jeśli `fs.watch` nie złapie zmiany → `docker restart claude-panel`.
 
 ## Jedna usługa (`compose.yml`)
 
@@ -48,19 +48,24 @@ Env panelu (z `compose.yml`):
 - `TMUX_SOCKET=/tmp/cpa-tmux/default`, `TMUX_TARGET=cpa-tmux` (jak puste → `POST /api/send` zwraca 500)
 - `UPLOADS_DIR=/app/claude-panel/uploads` (gdzie panel zapisuje pliki z `POST /api/send`)
 - `UPLOADS_CLAUDE_PATH=/app/claude-panel/uploads` (ścieżkę pod tym kluczem panel **wkleja w prompt** — bo Claude w tym samym kontenerze widzi tę samą ścieżkę)
+- `TLS_HOSTNAMES=192.168.68.44` (dodatkowe SAN-y certu — dostęp z LAN; `TLS=off` wyłącza HTTPS, `TLS_CERT`/`TLS_KEY` = własny cert)
+- `PANEL_PASSWORD=${PANEL_PASSWORD:-}` (hasło do panelu, z `.env` poza gitem; puste → panel zablokowany stroną z instrukcją; `PANEL_AUTH=off` = świadomie bez hasła)
 - `PANEL_LANG=pl` (język UI: `pl` lub `en`, domyślnie `pl`. Ustawiane przy boocie kontenera; stringi wstrzykiwane jako `window.T` do klienta przez `src/ui/i18n.js`)
 
 ## Panel (`claude-panel/`)
 
 ```
 claude-panel/
-  server.js              ← thin entrypoint: http.createServer + listen + WS upgrade dispatch (~20 linii)
+  server.js              ← entrypoint: listen + sniffing TLS/HTTP na jednym porcie + WS upgrade (auth.allowUpgrade → proxyWs)
   start.sh               ← entrypoint kontenera: tmux+claude (jeśli brak) + ttyd w tle + `node --watch server.js`
+  tls-init.sh            ← cert serwera + jednorazowe CA (klucz CA kasowany po podpisaniu) per projekt w ${CLAUDE_DIR}/panel-tls; atomowa podmiana, walidacja TLS_HOSTNAMES
   Dockerfile             ← node:22-slim + tmux + ttyd + git + docker.io + @anthropic-ai/claude-code (multi-arch)
   tmux.conf              ← config dla tmuxa odpalanego w tym samym kontenerze
   uploads/               ← runtime; czyszczone na boot kontenera (nie na --watch restart)
   src/
     config.js            ← env vary + stałe (CLAUDE_DIR, PORT, MAX_UPLOAD_BYTES, MIME_TO_EXT, STARTUP_ID, LANG, …)
+    tls.js               ← loadTls (walidacja pary, TLS≥1.2, ECDHE+AEAD; zły cert → null → http), GET /ca.crt (tylko bloki CERTIFICATE), handler gołego HTTP
+    auth.js              ← hasło do panelu: guard (UI/REST/SSE/terminal → 302 /login albo 401, POST bez same-origin → 403), /login /logout, cookie HMAC per instalacja, revocation + track() (logout zamyka SSE/WS), allowUpgrade, rate limit
     files.js             ← saveFile, extFromName, sanitizeExt + mkdir uploads + wipe-on-boot
     sessions.js          ← readJSONL + rawCache, listSessions, summarize/parse/detectStatus, readHistory, stripMarkup
     sse.js               ← sseClients Set + broadcast + scheduleTick + startWatchers(fs.watch)
@@ -124,6 +129,8 @@ claude-panel/
 - `POST /api/btw/close?id=` — kończy watcher i wysyła `Escape` do tmuxa, żeby zamknąć overlay `/btw` i odblokować normalną konwersację. 200 jak ok, 404 jak nie ma takiego id.
 - `GET /api/menu` — `{ ok, menu }`: aktualnie otwarte menu TUI albo `null`. `menu = {tabs, header, multi, items:[{idx, kind:"option"|"text"|"submit", n, label, desc, checked, cursor, value}], footer, sig}`.
 - `POST /api/menu` — body `{ sig, action }`, `action` = `{type:"select", idx}` | `{type:"text", idx, text}` | `{type:"key", key:"Escape"|"Left"|"Right"|"Tab"|"BTab"}`. 409 gdy `sig` nie pasuje do ekranu. Zwraca `{ok, menu}` ze stanem po akcji.
+- `GET /ca.crt` — CA projektu do opcjonalnej instalacji (tylko po HTTPS — po gołym HTTP 307; 404 przy własnym certyfikacie / `TLS=off`).
+- `GET/POST /login`, `POST /logout` — logowanie hasłem `PANEL_PASSWORD` (form, cookie `cpa_<hash>` 30 dni). Logout unieważnia token po stronie serwera i zamyka jego SSE/WS; `GET /logout` → tylko redirect na `/` (bez CSRF-owego wylogowania).
 - `GET /healthz` — `{ ok: true }`.
 
 ### Gotchas
@@ -135,10 +142,12 @@ claude-panel/
 - **SSE `scheduleTick`** jest debounce'owany, żeby przy szybkim zapisywaniu JSONL nie generować eventu na linię.
 - **Slash-command meta-entries** (`/clear` itd.) są skipowane w `detectStatus` — wpis usera bez odpowiedzi assistanta nie zostawia "thinking" na zawsze.
 - **`send-keys -l`** (literal mode) — żeby specjalne znaki nie były interpretowane jako tmux key bindings. Newline'y są wycinane z `text` (tmux zjadałby je jako osobne klawisze).
-- **Brak auth.** `POST /api/send` napędzi dowolną sesję tmuxa w kontenerze. Nie eksponować portu 8080 poza localhost / VPN.
+- **Hasło do panelu (`src/auth.js`).** `auth.guard` jest pierwszą linią `routes.js#handle` — chroni UI, REST, SSE i `/terminal`; publiczne tylko `/healthz` i `/ca.crt`. WebSocket chroni osobno `auth.allowUpgrade` w `server.js#onUpgrade` (cookie + same-origin) — **każda nowa ścieżka upgrade musi przejść przez `onUpgrade`**. **CSRF:** każdy request ≠ GET/HEAD (także `/login`, także przy `PANEL_AUTH=off`) wymaga `Sec-Fetch-Site: same-origin` albo `Origin` == `Host`/`X-Forwarded-Host` — SameSite=Lax nie chroni przed same-site (inny port tego hosta, subdomena), a `/api/send` = prompt do Claude'a. Bez `PANEL_PASSWORD` (i bez `PANEL_AUTH=off`) panel zwraca 503 ze stroną-instrukcją. Token = `exp.nonce.HMAC(KEY, exp.nonce)`, `KEY = HMAC(sekret, hasło)` — zmiana hasła unieważnia sesje, sekret w `${CLAUDE_DIR}/panel-auth.key` (wyciek cookie nie pozwala zgadywać hasła offline). Nazwa cookie `cpa_<sha256(KEY)[:10]>` — cookies ignorują port, stała nazwa = projekty na jednym hoście wylogowują się nawzajem. Wylogowane sygnatury w `${CLAUDE_DIR}/panel-auth.revoked`; `auth.track(req, socket)` rejestruje SSE/WS per sesja, logout je niszczy. `safeNext` przepuszcza tylko drukowalne ASCII (TAB → open redirect, nie-Latin1 → crash `writeHead`). Rate limit: 5 prób/adres (IPv6 /64), blokada 30 s podwajana do 15 min, licznik wygasa po 1 h, mapa max 10k z wyrzucaniem najstarszych (nigdy `clear()`). `process.on("uncaughtException")` w `server.js` — pod `node --watch` crash = panel leży do ręcznego restartu. Klient: wrapper `fetch` → na 401 zapis draftu do `sessionStorage` + przekierowanie na `/login`; SSE zamknięte na stałe (401/502) → sonda `/api/queue`; `proxy.js` wstrzykuje do ttyd skrypt, który po zamknięciu WS przy 401 przenosi na login. Hasło chroni przed siecią, nie przed Claude'em w kontenerze (widzi compose/env). Mimo hasła nie wystawiać 8080 do internetu.
 - **Obraz odpala Claude Code z `--dangerously-skip-permissions`.** To celowe (panel sam moderuje), ale konsument obrazu musi to wiedzieć — całość runtime'u zakłada zaufaną sesję pod kontrolą operatora panelu.
 - **`claude-panel/Dockerfile` startuje `node --watch server.js`.** Edycje `server.js`/`src/**` auto-reload bez rebuildu — `compose.yml` montuje `./claude-panel` RW do `/srv`.
 - **`PANEL_LANG` jest load-once przy boocie.** `INDEX_HTML` jest cache'owane po pierwszym `require("./ui")`, więc zmiana env w czasie życia kontenera nie ma efektu — wymaga `docker compose up -d` (recreate). Pliki `i18n.js`/`styles.js`/`body.js` są fine na `--watch` restart.
+- **HTTPS i HTTP na jednym porcie.** `server.js` przy TLS stawia surowy `net.Server` (`noDelay`, 10 s timeout do pierwszego bajtu), podgląda pierwszy bajt (`0x16` = TLS ClientHello) i oddaje socket do `https.Server` albo do `http.Server` z `createPlainHandler`. Wewnętrzne serwery nie robią `listen()`, więc po `listen` zewnętrznego dostają ręczne `emit("listening")` — bez tego nie działają `headersTimeout`/`requestTimeout` (slowloris). Goły HTTP: `X-Forwarded-*`/`Forwarded` → normalny panel (reverse proxy, bez pętli redirectów); `/healthz` → 200; `/api/stream` → jeden `hello` ze `startup:"tls-redirect"`, żeby stara karta HTTP sama się przeładowała; reszta → **307** (nie 308 — przeglądarki cache'ują 308 na zawsze, `TLS=off` by nie pomógł).
+- **Cert per projekt, akceptowany kliknięciem.** `${CLAUDE_DIR}/panel-tls` — zero zmian w compose, nic w obrazie. Klucz CA jest kasowany zaraz po podpisaniu (instalacja CA nie daje możliwości podrobienia innej domeny). Cert trwały, regeneracja tylko przy zmianie SAN-ów / 30 dni przed wygaśnięciem — każda = ponowna akceptacja w przeglądarce. `tls-init.sh` biegnie tylko w `start.sh` (boot kontenera) — zmiana `TLS_HOSTNAMES` wymaga recreate. Ograniczenia: iOS Safari nie respektuje wyjątku dla WebSocketów (terminal wymaga instalacji CA), Chrome pamięta wyjątek ~7 dni, Firefox jeden wpis na host:port (wiele projektów na `localhost:8080` = akceptacja przy każdym przełączeniu). ttyd za proxy zostaje na gołym HTTP po `127.0.0.1`.
 
 ## Release / CI (`.circleci/config.yml`)
 
@@ -170,6 +179,8 @@ services:
       UPLOADS_DIR: /app/claude-panel/uploads
       UPLOADS_CLAUDE_PATH: /app/claude-panel/uploads
       PANEL_LANG: pl   # lub "en"
+      PANEL_PASSWORD: ${PANEL_PASSWORD}   # wymagane (z .env) — bez tego panel pokazuje tylko instrukcję
+      # TLS_HOSTNAMES: "192.168.1.10"   # IP/hosty z LAN w certyfikacie
     ports: ["8080:8080"]
     group_add: ["998"]
 ```
